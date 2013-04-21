@@ -52,23 +52,13 @@ driver(Options, Todo, Done)->
 	    driver(Options, Todo2++NewUrls, [Url|Done])
     end.
 
-filter_urls(NewUrls, Todo, Done)->    
+filter_urls(NewUrls, Todo, Done)->
     Known = sets:union(sets:from_list(Todo), sets:from_list(Done)),
     [X || X<-NewUrls,not sets:is_element(X, Known)].
 
-timestamp() ->
-    {Mega,Sec,Micro} = os:timestamp(),
-    (Mega*1000000+Sec)+Micro/1000000.0.
-
-add_thousand_separator(Str, Sep)->
-    List=lists_support:n_length_chunks_back(Str,3),
-    lists_support:join(List, Sep).
-
 format_bytes(N) ->
-    S=integer_to_list(N),
-    S2=add_thousand_separator(S, ","),
-    S2++" bytes".
-  
+    support:format_int_with_thousand_separator(N, ",") ++ " bytes".
+
 download(Url)->
     case httpc:request(Url) of
 	{ok, {{_Version, 403, _ReasonPhrase}, _Headers, _Body}}-> {httpError,403};
@@ -89,10 +79,10 @@ handleHttpError(_Url, Code, Time)->
 
 handle_one_url(Options,Url) ->
     io:format("  Downloading '~s' ...", [Url]),
-    Start=timestamp(),
-    case download(Url) of 
-	{ok, Body} -> handleOk(Options,Url, Body, timestamp() - Start);
-	{httpError, Code} -> handleHttpError(Url, Code, timestamp() - Start)
+    Start=support:timestamp(),
+    case download(Url) of
+	{ok, Body} -> handleOk(Options,Url, Body, support:timestamp() - Start);
+	{httpError, Code} -> handleHttpError(Url, Code, support:timestamp() - Start)
     end.
 
 -ifdef(TEST).
