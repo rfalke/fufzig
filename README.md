@@ -7,10 +7,10 @@ Usage
 =====
 
 First you have to compile the erl files to beam files:
-$ make
+    $ make
 
 Than you can run the program:
-$ ./fufzig
-$ ./fufzig www.example.com
-$ ./fufzig -o output_dir -r+ http://www.example.com/some/path
-$ ./fufzig -o output_dir -r++ http://www.example.com/some/path
+    $ ./fufzig
+    $ ./fufzig www.example.com
+    $ ./fufzig -o output_dir -r+ http://www.example.com/some/path
+    $ ./fufzig -o output_dir -r++ http://www.example.com/some/path
