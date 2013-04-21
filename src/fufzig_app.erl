@@ -33,56 +33,54 @@ main()->
 %% Implementation
 %% ===================================================================
 
-driver(Options, Url)->
+driver(Options, Url) ->
     driver(Options, [Url], []).
 
-driver(Options, Todo, Done)->
+driver(Options, Todo, Done) ->
     io:format("driver: ~B urls done and ~B urls todo~n", [length(Done), length(Todo)]),
     case Todo of
-	[] ->
-	    io:format("Finished downloading ~n");
-	[Url|Todo2] ->
-	    NewUrls0 = filter_urls(handle_one_url(Options, Url), Todo, Done),
-	    TestFun = Options#options.acceptUrlTest,
-	    NewUrls = [X || X <- NewUrls0, TestFun(X)],
-	    case NewUrls of
-		[_H|_T] -> io:format("  found ~B new urls to crawl: ~p ~n", [length(NewUrls), NewUrls]);
-		[] -> ok
-	    end,
-	    driver(Options, Todo2++NewUrls, [Url|Done])
+        [] -> io:format("Finished downloading ~n");
+        [Url | Todo2] ->
+            NewUrls0 = filter_urls(handle_one_url(Options, Url), Todo, Done),
+            TestFun = Options#options.acceptUrlTest,
+            NewUrls = [X || X <- NewUrls0, TestFun(X)],
+            case NewUrls of
+                [_H | _T] -> io:format("  found ~B new urls to crawl: ~p ~n", [length(NewUrls), NewUrls]);
+                [] -> ok
+            end,
+            driver(Options, Todo2 ++ NewUrls, [Url | Done])
     end.
 
-filter_urls(NewUrls, Todo, Done)->
+filter_urls(NewUrls, Todo, Done) ->
     Known = sets:union(sets:from_list(Todo), sets:from_list(Done)),
-    [X || X<-NewUrls,not sets:is_element(X, Known)].
+    [X || X <- NewUrls, not sets:is_element(X, Known)].
 
 format_bytes(N) ->
     support:format_int_with_thousand_separator(N, ",") ++ " bytes".
 
-download(Url)->
+download(Url) ->
     case httpc:request(Url) of
-	{ok, {{_Version, 403, _ReasonPhrase}, _Headers, _Body}}-> {httpError,403};
-	{ok, {{_Version, 404, _ReasonPhrase}, _Headers, _Body}}-> {httpError,404};
-	{ok, {{_Version, 200, _ReasonPhrase}, _Headers, Body}}-> {ok,Body}
+        {ok, {{_Version, 403, _ReasonPhrase}, _Headers, _Body}} -> {httpError, 403};
+        {ok, {{_Version, 404, _ReasonPhrase}, _Headers, _Body}} -> {httpError, 404};
+        {ok, {{_Version, 200, _ReasonPhrase}, _Headers, Body}} -> {ok, Body}
     end.
 
-handleOk(Options,Url, Body, Time)->
+handleOk(Options, Url, Body, Time) ->
     io:format(" got ~s in ~.1f seconds~n", [format_bytes(length(Body)), Time]),
     file_support:write_response_to_file(Options#options.basedir, Body, Url),
-    Links=extraction:extract_links(Url, Body),
-    %io:format("Links ~p~n", [Links]),
+    Links = extraction:extract_links(Url, Body),
     Links.
 
-handleHttpError(_Url, Code, Time)->
+handleHttpError(_Url, Code, Time) ->
     io:format(" got ~B after ~.1f seconds~n", [Code, Time]),
     [].
 
-handle_one_url(Options,Url) ->
+handle_one_url(Options, Url) ->
     io:format("  Downloading '~s' ...", [Url]),
-    Start=support:timestamp(),
+    Start = support:timestamp(),
     case download(Url) of
-	{ok, Body} -> handleOk(Options,Url, Body, support:timestamp() - Start);
-	{httpError, Code} -> handleHttpError(Url, Code, support:timestamp() - Start)
+        {ok, Body} -> handleOk(Options, Url, Body, support:timestamp() - Start);
+        {httpError, Code} -> handleHttpError(Url, Code, support:timestamp() - Start)
     end.
 
 -ifdef(TEST).

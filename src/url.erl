@@ -9,109 +9,108 @@
 replace_in_string(S, Old, New) ->
     StrLen = string:len(S),
     OldLen = string:len(Old),
-    Pos = string:str(S,Old),
+    Pos = string:str(S, Old),
     if
-	Pos =:= 0 ->
-	    S;
-	true ->
-	    Left = string:left(S,Pos-1),
-	    Right = string:right(S,StrLen-OldLen-Pos+1),
-	    string:concat(string:concat(Left,New), replace_in_string(Right,Old,New))
+        Pos =:= 0 ->
+            S;
+        true ->
+            Left = string:left(S, Pos - 1),
+            Right = string:right(S, StrLen - OldLen - Pos + 1),
+            string:concat(string:concat(Left, New), replace_in_string(Right, Old, New))
     end.
 
 is_mailto(Url) -> lists:prefix("mailto:", Url).
 
 is_javascript(Url) -> lists:prefix("javascript:", Url).
 
-is_supported_url(Url)->
+is_supported_url(Url) ->
     case Url of
-	"#" -> false;
-	_ -> not(is_mailto(Url) orelse is_javascript(Url) orelse lists:prefix("http:///", Url))
+        "#" -> false;
+        _ -> not(is_mailto(Url) orelse is_javascript(Url) orelse lists:prefix("http:///", Url))
     end.
 
 remove_anchor(Url) ->
-    case Url=="#" of
-	true -> Url;
-	false -> [H | _] = string:tokens(Url, "#"),
-		 H
+    case Url == "#" of
+        true -> Url;
+        false -> [H | _] = string:tokens(Url, "#"),
+            H
     end.
 
 rsplit(Input, Char) ->
     Index = string:rchr(Input, Char),
-    {string:substr(Input, 1, Index),
-     string:substr(Input, Index + 1)}.
+    {string:substr(Input, 1, Index), string:substr(Input, Index + 1)}.
 
-normalize_url(Url)->
-    Url2=replace_in_string(Url, "/./", "/"),
-    case Url2==Url of
-	true -> Url;
-	false -> normalize_url(Url2)
-    end.	     
+normalize_url(Url) ->
+    Url2 = replace_in_string(Url, "/./", "/"),
+    case Url2 == Url of
+        true -> Url;
+        false -> normalize_url(Url2)
+    end.
 
 get_proto(Url) ->
-    {match, [Proto]} = re:run(Url, "^(https?:).*\$", [{capture,all_but_first,list}]),
-    Proto.	
-    
+    {match, [Proto]} = re:run(Url, "^(https?:).*\$", [{capture, all_but_first, list}]),
+    Proto.
+
 split_full(Url) ->
     %io:format("url is ~p ~n", [Url]),
-    case re:run(Url, "^(https?://)([a-zA-Z0-9-.]+)(:[0-9]+)?(.*)\$", [{capture,all_but_first,list}]) of
-	{match, [Proto,Host,Port,Path0]} ->  
-	    Path = case Path0 of
-		       [] -> "/";
-		       _ -> Path0
-		   end,
-	    Result = {ok,Proto,Host,Port,Path},
-	    %io:format("result of url splitting: ~p ~n", [Result]),
-	    Result;
-	nomatch -> 
-	    %io:format("is not a full url~n"),
-	    nofullurl
+    case re:run(Url, "^(https?://)([a-zA-Z0-9-.]+)(:[0-9]+)?(.*)\$", [{capture, all_but_first, list}]) of
+        {match, [Proto, Host, Port, Path0]} ->
+            Path = case Path0 of
+                [] -> "/";
+                _ -> Path0
+            end,
+            Result = {ok, Proto, Host, Port, Path},
+            %io:format("result of url splitting: ~p ~n", [Result]),
+            Result;
+        nomatch ->
+            %io:format("is not a full url~n"),
+            nofullurl
     end.
 
 split_url(Url) ->
     case split_full(Url) of
-	{ok,Proto,Host,Port,AllPath} ->
-	    {Path, Name} = rsplit(AllPath, $/),
-	    {full, Proto++Host++Port, Path, Name};
-	nofullurl ->
-	    case lists:prefix("//", Url) of
-		true -> 
-		    case re:run(Url, "^//[a-zA-Z0-9-.]+(:[0-9]+)?/.*\$", [{capture,all_but_first,list}]) of
-			{match,_} -> {withoutproto,Url};
-			nomatch -> {withoutproto,Url++"/"}
-		    end;
-		false ->
-		    case lists:prefix("/", Url) of
-			true -> absolute;
-			false -> relative
-		    end
-	    end
+        {ok, Proto, Host, Port, AllPath} ->
+            {Path, Name} = rsplit(AllPath, $/),
+            {full, Proto ++ Host ++ Port, Path, Name};
+        nofullurl ->
+            case lists:prefix("//", Url) of
+                true ->
+                    case re:run(Url, "^//[a-zA-Z0-9-.]+(:[0-9]+)?/.*\$", [{capture, all_but_first, list}]) of
+                        {match, _} -> {withoutproto, Url};
+                        nomatch -> {withoutproto, Url ++ "/"}
+                    end;
+                false ->
+                    case lists:prefix("/", Url) of
+                        true -> absolute;
+                        false -> relative
+                    end
+            end
     end.
 
 make_link_absolute(Base, UrlPara) ->
     Url = remove_anchor(UrlPara),
     {full, Host, Path, _} = split_url(Base),
     AbsoluteUrl = case split_url(remove_anchor(Url)) of
-		      {full, Host2, Path2, Name2} -> Host2++Path2++Name2;
-		      {withoutproto, Url2} -> get_proto(Base)++Url2;
-		      absolute -> Host ++ Url;
-		      relative -> Host ++ Path ++ Url
-		  end,
+        {full, Host2, Path2, Name2} -> Host2 ++ Path2 ++ Name2;
+        {withoutproto, Url2} -> get_proto(Base) ++ Url2;
+        absolute -> Host ++ Url;
+        relative -> Host ++ Path ++ Url
+    end,
     normalize_url(AbsoluteUrl).
-    
+
 make_full_url(UrlPara) ->
     Url = remove_anchor(UrlPara),
-    {match, [Proto,Host,Port,Path]} = re:run(Url, "^([a-z]+://)?([a-zA-Z0-9-.]+)(:[0-9]+)?(.*)\$", 
-					     [{capture,all_but_first,list}]),
+    {match, [Proto, Host, Port, Path]} = re:run(Url, "^([a-z]+://)?([a-zA-Z0-9-.]+)(:[0-9]+)?(.*)\$",
+        [{capture, all_but_first, list}]),
     Proto2 = case Proto of
-		 [] -> "http://";
-		 _ -> Proto
-	     end,
+        [] -> "http://";
+        _ -> Proto
+    end,
     Path2 = case Path of
-		[] -> "/";
-		_ -> Path
-	    end,
-    Proto2++Host++Port++Path2.
+        [] -> "/";
+        _ -> Path
+    end,
+    Proto2 ++ Host ++ Port ++ Path2.
 
 -ifdef(TEST).
 split_full_test_() ->

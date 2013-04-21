@@ -10,13 +10,12 @@
 -endif.
 
 write_response_to_file(BasePath, Content, Url) ->
-    {ok,_Proto,Host,_Port,Path} = url:split_full(Url),
-    Fname = lists:concat([BasePath,"/",Host,Path]),
+    {ok, _Proto, Host, _Port, Path} = url:split_full(Url),
+    Fname = lists:concat([BasePath, "/", Host, Path]),
     Fname2 = case lists:suffix("/", Fname) of
-	true -> Fname++"index.html";
-	false -> Fname
+        true -> Fname ++ "index.html";
+        false -> Fname
     end,
-    %io:format("Will write to ~p ~n", [Fname2]),
     ok = filelib:ensure_dir(Fname2),
     ok = file:write_file(Fname2, Content),
     io:format("  saved to ~s~n", [Fname2]),
@@ -48,11 +47,11 @@ walk(Path, VisitBefore, VisitAfter, Arg) ->
     ok.
 
 rm_r(Root) ->
-    DelOneFile = fun(X) -> 
-			 ok=file:delete(X) 
-		 end, 
+    DelOneFile = fun(X) ->
+			 ok=file:delete(X)
+		 end,
     Before = fun(_Arg, _Path, _Files, _Dirs) -> ok end,
-    After = fun(_Arg, Path, Files, _Dirs) -> 
+    After = fun(_Arg, Path, Files, _Dirs) ->
 		    [DelOneFile(Path++"/"++X) || X<-Files],
 		    ok = file:del_dir(Path),
 		    ok
