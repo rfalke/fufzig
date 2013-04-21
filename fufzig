@@ -1,0 +1,4 @@
+#!/bin/sh
+
+EBIN=`cd $(dirname $0);pwd`/ebin
+erl -noshell -pz "$EBIN" -s fufzig_app main -extra "$@"

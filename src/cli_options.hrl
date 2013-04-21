@@ -1,0 +1,1 @@
+-record(options,{seedurl=[], basedir=".", recurse=none, acceptUrlTest=none}).

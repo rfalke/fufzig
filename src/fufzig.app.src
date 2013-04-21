@@ -1,0 +1,12 @@
+{application, fufzig,
+ [
+  {description, "Fufzig is a flexible url fetcher like wget written in Erlang"},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { fufzig_app, []}},
+  {env, []}
+ ]}.
