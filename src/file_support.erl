@@ -2,11 +2,11 @@
 
 -export([write_response_to_file/3]).
 
+% for file_info
+-include_lib("kernel/include/file.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
-% for file_info
--include_lib("kernel/include/file.hrl").
 -endif.
 
 write_response_to_file(BasePath, Content, Url) ->
@@ -16,10 +16,35 @@ write_response_to_file(BasePath, Content, Url) ->
         true -> Fname ++ "index.html";
         false -> Fname
     end,
-    ok = filelib:ensure_dir(Fname2),
+    ok = ensure_parent_dir_exists(Fname2),
     ok = file:write_file(Fname2, Content),
     io:format("  saved to ~s~n", [Fname2]),
     ok.
+
+file_info_of(Path) ->
+    case file:read_link_info(Path) of 
+	{ok, #file_info{type=Type}} -> Type;
+	{error, enoent} -> enoent
+    end.
+
+ensure_parent_dir_exists(Fname)->
+    ensure_dir(filename:dirname(Fname)).
+
+ensure_dir(Dir) ->
+    case file_info_of(Dir) of 
+	enoent -> 
+	    Parent = filename:dirname(Dir),
+	    ensure_dir(Parent),
+	    ok=file:make_dir(Dir);
+	directory ->
+	    ok;
+	regular ->
+	    ok=file:rename(Dir, Dir++".tmp"),
+	    ok=file:make_dir(Dir),
+	    ok=file:rename(Dir++".tmp",Dir++"/index.html"),
+	    ok;
+	_->error("Unexepected case for "++Dir)
+    end.
 
 %% ================ Begin test code
 -ifdef(TEST).
@@ -75,6 +100,19 @@ write2_test() ->
 	write_response_to_file(Path, "foobar", "https://www.example.com:80/abc/def.html"),
 	{ok,Content} = file:read_file(Path++"/www.example.com/abc/def.html"),
 	?_assertEqual("foobar", binary_to_list(Content))
+    after
+	rm_r(Path)
+    end.
+
+write3_test() ->
+    Path = mktemp(),
+    try
+	write_response_to_file(Path, "content1", "https://www.example.com:80/abc"),
+	write_response_to_file(Path, "content2", "https://www.example.com:80/abc/def.html"),
+	{ok,Content1} = file:read_file(Path++"/www.example.com/abc/index.html"),
+	?_assertEqual("conent1", binary_to_list(Content1)),
+	{ok,Content2} = file:read_file(Path++"/www.example.com/abc/def.html"),
+	?_assertEqual("content2", binary_to_list(Content2))
     after
 	rm_r(Path)
     end.
