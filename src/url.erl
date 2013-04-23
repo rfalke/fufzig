@@ -40,10 +40,17 @@ rsplit(Input, Char) ->
     Index = string:rchr(Input, Char),
     {string:substr(Input, 1, Index), string:substr(Input, Index + 1)}.
 
+replace_dot_at_end(Url)->
+    case lists:reverse(Url) of
+	[$.,$/|T] ->
+	    lists:reverse(T)++"/DOT";
+	_ -> Url
+    end.
+
 normalize_url(Url) ->
     Url2 = replace_in_string(Url, "/./", "/"),
     case Url2 == Url of
-        true -> Url;
+        true -> replace_dot_at_end(Url);
         false -> normalize_url(Url2)
     end.
 
@@ -139,6 +146,7 @@ make_link_absolute_test_() ->
      ?_assertEqual("http://www.example.com/abc/foo/bar", make_link_absolute(Full, "foo/bar#xyz")),
 
      ?_assertEqual("http://www.example.com/foo/bar", make_link_absolute(Full, "/foo/././bar")),
+     ?_assertEqual("http://www.example.com/foo/DOT", make_link_absolute(Full, "/foo/.")),
      ?_assertEqual("http://otherhost/", make_link_absolute(Full, "http://otherhost")),
 
      ?_assertEqual("http://newhost/some/path", make_link_absolute(Full, "//newhost/some/path")),
