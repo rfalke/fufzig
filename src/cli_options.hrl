@@ -1,1 +1,1 @@
--record(options,{seedurl=[], basedir=".", recurse=none, acceptUrlTest=none}).
+-record(options,{seedurl=[], basedir=".", recurse=none, acceptUrlTest=unset,includePattern=unset}).

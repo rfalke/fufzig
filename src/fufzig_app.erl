@@ -24,7 +24,6 @@ stop(_State) ->
 main()->
     inets:start(),
     Args=init:get_plain_arguments(),
-    io:format("Args: ~p~n",[Args]),
     Options=cli_options:parse_options(Args),
     driver(Options, url:make_full_url(Options#options.seedurl)),
     halt(0).
