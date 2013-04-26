@@ -22,7 +22,12 @@ extract_links(Url, Body) ->
 		 Inner("(?:background)=\"([^\"]+)\"")),
     AbsoluteLinks = [url:make_link_absolute(Url, url:remove_anchor(X))
 		     || X <- Links, url:is_supported_url(X)],
-    ordsets:to_list(ordsets:from_list(AbsoluteLinks)).
+    {GoodLinks, BadLinks} = lists:partition(fun(X) -> not (url:split_full(X)==nofullurl) end, AbsoluteLinks),
+    case BadLinks of
+	[] -> ok;
+	_ -> io:format("Ignore links which are not valid ~p~n", [BadLinks])
+    end,
+    ordsets:to_list(ordsets:from_list(GoodLinks)).
 
 -ifdef(TEST).
 extract_links_test_() ->
@@ -33,7 +38,8 @@ extract_links_test_() ->
      ?_assertEqual([], extract_links(Url, "href=\"mailto:foo@bar.com\"")),
      ?_assertEqual([], extract_links(Url, "href=\"javascript:void(0)\"")),
      ?_assertEqual([], extract_links(Url, "href=\"#\"")),
-     ?_assertEqual([], extract_links(Url, "some text hr_ef=\"link1\""))
+     ?_assertEqual([], extract_links(Url, "some text hr_ef=\"link1\"")),
+     ?_assertEqual([], extract_links(Url, "<img src=\"///C:\\Users\\foo\\bar.gif\" />"))
     ].
 
 -endif.
