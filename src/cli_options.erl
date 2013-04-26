@@ -9,18 +9,21 @@
 -include("cli_options.hrl").
 
 is_in_subdir(Seedurl, Url) ->
-    {ok, SProto, SHost, SPort, SPath} = url:split_full(Seedurl),
-    {ok, Proto, Host, Port, Path} = url:split_full(Url),
+    {ok, SProto, SHost, SPort, SPath, _SQuery} = url:split_full(Seedurl),
+    {ok, Proto, Host, Port, Path, _Query} = url:split_full(Url),
     SBase = SProto ++ SHost ++ SPort ++ filename:dirname(SPath),
     Base = Proto ++ Host ++ Port ++ filename:dirname(Path),
     lists:prefix(SBase, Base).
 
 is_same_host(Seedurl, Url) ->
-    {ok, SProto, SHost, SPort, _SPath} = url:split_full(Seedurl),
-    {ok, Proto, Host, Port, _Path} = url:split_full(Url),
-    SBase = SProto ++ SHost ++ SPort,
-    Base = Proto ++ Host ++ Port,
-    SBase == Base.
+    {ok, SProto, SHost, SPort, _SPath, _SQuery} = url:split_full(Seedurl),
+    case url:split_full(Url) of
+	{ok, Proto, Host, Port, _Path, _Query} -> 
+	    SBase = SProto ++ SHost ++ SPort,
+	    Base = Proto ++ Host ++ Port,
+	    SBase == Base;
+	_ -> error("Have a problem with "++Url)
+    end.
 
 usage() ->
     io:format("fufzig [-o DIR] [-r|-r+|-r++] [-i PATTERNS] URL~n"),

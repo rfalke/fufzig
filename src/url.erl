@@ -6,19 +6,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-replace_in_string(S, Old, New) ->
-    StrLen = string:len(S),
-    OldLen = string:len(Old),
-    Pos = string:str(S, Old),
-    if
-        Pos =:= 0 ->
-            S;
-        true ->
-            Left = string:left(S, Pos - 1),
-            Right = string:right(S, StrLen - OldLen - Pos + 1),
-            string:concat(string:concat(Left, New), replace_in_string(Right, Old, New))
-    end.
-
 is_mailto(Url) -> lists:prefix("mailto:", Url).
 
 is_javascript(Url) -> lists:prefix("javascript:", Url).
@@ -47,11 +34,35 @@ replace_dot_at_end(Url)->
 	_ -> Url
     end.
 
-normalize_url(Url) ->
-    Url2 = replace_in_string(Url, "/./", "/"),
-    case Url2 == Url of
-        true -> replace_dot_at_end(Url);
-        false -> normalize_url(Url2)
+% http://tools.ietf.org/html/rfc3986#section-5.2.4
+removeDotSegments(In, Out)->
+    case In of
+	[] -> lists:reverse(Out);
+	["." | T] -> removeDotSegments(T, Out);
+	[".." | T] ->
+	    case Out of
+		[] -> removeDotSegments(T, Out);
+		[_|T2] -> removeDotSegments(T, T2)
+	    end;
+	[H | T] ->removeDotSegments(T, [H|Out])
+    end.
+
+join(List, Sep)->
+    case List of
+	[] -> "";
+	[H1,H2|T]-> H1++Sep++join([H2|T],Sep);
+	[H]-> H
+    end.
+
+normalize_url(UrlPara) ->
+    Url = replace_dot_at_end(UrlPara),
+    case split_full(Url) of
+	nofullurl -> Url;
+	{ok, Proto, Host, Port, Path, Query} ->
+	    PathParts=re:split(Path, "/",[{return,list}]),
+	    Cleaned = removeDotSegments(PathParts,[]),
+	    NewPath=join(Cleaned,"/"),
+	    Proto++Host++Port++NewPath++Query
     end.
 
 get_proto(Url) ->
@@ -60,13 +71,13 @@ get_proto(Url) ->
 
 split_full(Url) ->
     %io:format("url is ~p ~n", [Url]),
-    case re:run(Url, "^(https?://)([a-zA-Z0-9-.]+)(:[0-9]+)?(.*)\$", [{capture, all_but_first, list}]) of
-        {match, [Proto, Host, Port, Path0]} ->
+    case re:run(Url, "^(https?://)([a-zA-Z0-9-.]+)(:[0-9]+)?([^?]*)(.*)\$", [{capture, all_but_first, list}]) of
+        {match, [Proto, Host, Port, Path0, Query]} ->
             Path = case Path0 of
                 [] -> "/";
                 _ -> Path0
             end,
-            Result = {ok, Proto, Host, Port, Path},
+            Result = {ok, Proto, Host, Port, Path, Query},
             %io:format("result of url splitting: ~p ~n", [Result]),
             Result;
         nomatch ->
@@ -76,9 +87,9 @@ split_full(Url) ->
 
 split_url(Url) ->
     case split_full(Url) of
-        {ok, Proto, Host, Port, AllPath} ->
+        {ok, Proto, Host, Port, AllPath, Query} ->
             {Path, Name} = rsplit(AllPath, $/),
-            {full, Proto ++ Host ++ Port, Path, Name};
+            {full, Proto ++ Host ++ Port, Path, Name++Query};
         nofullurl ->
             case lists:prefix("//", Url) of
                 true ->
@@ -121,10 +132,11 @@ make_full_url(UrlPara) ->
 
 -ifdef(TEST).
 split_full_test_() ->
-    [?_assertEqual({ok,"http://", "www.example.com", "", "/abc/dec"}, split_full("http://www.example.com/abc/dec")),
-     ?_assertEqual({ok,"http://", "www.example.com", ":123", "/abc/dec"}, split_full("http://www.example.com:123/abc/dec")),
-     ?_assertEqual({ok,"http://", "www.example.com", "", "/"}, split_full("http://www.example.com/")),
-     ?_assertEqual({ok,"http://", "www.example.com", "", "/"}, split_full("http://www.example.com")),
+    [?_assertEqual({ok,"http://", "www.example.com", "", "/abc/dec", ""}, split_full("http://www.example.com/abc/dec")),
+     ?_assertEqual({ok,"http://", "www.example.com", "", "/abc/dec", "?foo=bar"}, split_full("http://www.example.com/abc/dec?foo=bar")),
+     ?_assertEqual({ok,"http://", "www.example.com", ":123", "/abc/dec", ""}, split_full("http://www.example.com:123/abc/dec")),
+     ?_assertEqual({ok,"http://", "www.example.com", "", "/", ""}, split_full("http://www.example.com/")),
+     ?_assertEqual({ok,"http://", "www.example.com", "", "/", ""}, split_full("http://www.example.com")),
      ?_assertEqual(nofullurl, split_full("/abc/def")),
      ?_assertEqual(nofullurl, split_full("abc/def"))
     ].
@@ -150,7 +162,10 @@ make_link_absolute_test_() ->
      ?_assertEqual("http://otherhost/", make_link_absolute(Full, "http://otherhost")),
 
      ?_assertEqual("http://newhost/some/path", make_link_absolute(Full, "//newhost/some/path")),
-     ?_assertEqual("http://newhost/", make_link_absolute(Full, "//newhost"))
+     ?_assertEqual("http://newhost/", make_link_absolute(Full, "//newhost")),
+
+     ?_assertEqual("http://www.example.com/a/g?foo=..", make_link_absolute(Full, "/a/b/c/./../../g?foo=..")),
+     ?_assertEqual("http://www.example.com/abc/mid/6", make_link_absolute(Full, "mid/content=5/../6"))
     ].
 
 make_full_url_test_() ->

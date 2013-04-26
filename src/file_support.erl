@@ -9,30 +9,41 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-write_response_to_file(BasePath, Content, Url) ->
-    {ok, _Proto, Host, _Port, Path} = url:split_full(Url),
-    Fname = lists:concat([BasePath, "/", Host, Path]),
-    Fname2 = case lists:suffix("/", Fname) of
+adjust_file_name(Fname)->
+    case lists:suffix("/", Fname) of
         true -> Fname ++ "index.html";
-        false -> Fname
-    end,
+        false -> case file_info_of(Fname)==directory of
+		     true->Fname ++ "/index.html";
+		     false->Fname
+		 end
+    end.
+
+write_response_to_file(BasePath, Content, Url) ->
+    {ok, _Proto, Host, _Port, Path, _Query} = url:split_full(Url),
+    Fname = lists:concat([BasePath, "/", Host, Path]),
+    Fname2 = adjust_file_name(Fname),
     ok = ensure_parent_dir_exists(Fname2),
-    ok = file:write_file(Fname2, Content),
-    io:format("  saved to ~s~n", [Fname2]),
+    Dir = filename:dirname(Fname2),
+    Name = filename:basename(Fname2),
+    Name2 = lists:sublist(Name,100),
+    Fname3 = Dir++"/"++Name2,
+    ok = file:write_file(Fname3, Content),
+    io:format("  saved to ~s~n", [Fname3]),
     ok.
 
 file_info_of(Path) ->
-    case file:read_link_info(Path) of 
+    case file:read_link_info(Path) of
 	{ok, #file_info{type=Type}} -> Type;
-	{error, enoent} -> enoent
+	{error, enoent} -> enoent;
+	{error, enotdir} -> enoent
     end.
 
 ensure_parent_dir_exists(Fname)->
     ensure_dir(filename:dirname(Fname)).
 
 ensure_dir(Dir) ->
-    case file_info_of(Dir) of 
-	enoent -> 
+    case file_info_of(Dir) of
+	enoent ->
 	    Parent = filename:dirname(Dir),
 	    ensure_dir(Parent),
 	    ok=file:make_dir(Dir);
@@ -87,7 +98,7 @@ rm_r(Root) ->
 write_test() ->
     Path = mktemp(),
     try
-	write_response_to_file(Path, "foobar", "http://www.example.com/abc/def.html"),
+	write_response_to_file(Path, "foobar", "http://www.example.com/abc/def.html?foo=bar"),
 	{ok,Content} = file:read_file(Path++"/www.example.com/abc/def.html"),
 	?_assertEqual("foobar", binary_to_list(Content))
     after
@@ -112,6 +123,19 @@ write3_test() ->
 	{ok,Content1} = file:read_file(Path++"/www.example.com/abc/index.html"),
 	?_assertEqual("conent1", binary_to_list(Content1)),
 	{ok,Content2} = file:read_file(Path++"/www.example.com/abc/def.html"),
+	?_assertEqual("content2", binary_to_list(Content2))
+    after
+	rm_r(Path)
+    end.
+
+write4_test() ->
+    Path = mktemp(),
+    try
+	write_response_to_file(Path, "content1", "https://www.example.com:80/abc/def.html"),
+	write_response_to_file(Path, "content2", "https://www.example.com:80/abc"),
+	{ok,Content1} = file:read_file(Path++"/www.example.com/abc/def.html"),
+	?_assertEqual("conent1", binary_to_list(Content1)),
+	{ok,Content2} = file:read_file(Path++"/www.example.com/abc/index.html"),
 	?_assertEqual("content2", binary_to_list(Content2))
     after
 	rm_r(Path)
