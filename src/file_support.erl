@@ -35,7 +35,8 @@ file_info_of(Path) ->
     case file:read_link_info(Path) of
 	{ok, #file_info{type=Type}} -> Type;
 	{error, enoent} -> enoent;
-	{error, enotdir} -> enoent
+    {error, enotdir} -> enoent;
+    {error, enametoolong} -> enoent
     end.
 
 ensure_parent_dir_exists(Fname)->
