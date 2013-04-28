@@ -57,29 +57,39 @@ filter_urls(NewUrls, Todo, Done) ->
 format_bytes(N) ->
     support:format_int_with_thousand_separator(N, ",") ++ " bytes".
 
-download(Url) ->
-    case httpc:request(Url) of
-        {ok, {{_Version, 403, _ReasonPhrase}, _Headers, _Body}} -> {httpError, 403};
-        {ok, {{_Version, 404, _ReasonPhrase}, _Headers, _Body}} -> {httpError, 404};
-        {ok, {{_Version, 200, _ReasonPhrase}, _Headers, Body}} -> {ok, Body}
+downloadWithRetry(Url, WhichTry, TotalTries) ->
+    case WhichTry>TotalTries of
+	true -> failed;
+	false ->
+	    io:format("  Downloading '~s' ~B/~B ...", [Url, WhichTry, TotalTries]),
+	    Start = support:timestamp(),
+	    Resp = httpc:request(get, {Url, []}, [{timeout,10*1000}], []),
+	    Time = support:timestamp() - Start,
+	    case Resp of
+		{ok, {{_Version, 200, _ReasonPhrase}, _Headers, Body}} ->
+		    io:format(" got ~s in ~.1f seconds~n", [format_bytes(length(Body)), Time]),
+		    {ok,Body};
+		{ok, {{_Version, ErrorCode, _ReasonPhrase}, _Headers, _Body}} ->
+		    io:format(" got ~B after ~.1f seconds~n", [ErrorCode, Time]),
+		    case ErrorCode==403 orelse ErrorCode==404 of
+			true -> failed;
+			false -> downloadWithRetry(Url, WhichTry+1, TotalTries)
+		    end;
+		_ -> io:format(" got ~p after ~.1f seconds~n", [Resp, Time]),
+		     downloadWithRetry(Url, WhichTry+1, TotalTries)
+	    end
     end.
 
-handleOk(Options, Url, Body, Time) ->
-    io:format(" got ~s in ~.1f seconds~n", [format_bytes(length(Body)), Time]),
-    file_support:write_response_to_file(Options#options.basedir, Body, Url),
-    Links = extraction:extract_links(Url, Body),
-    Links.
-
-handleHttpError(_Url, Code, Time) ->
-    io:format(" got ~B after ~.1f seconds~n", [Code, Time]),
-    [].
-
 handle_one_url(Options, Url) ->
-    io:format("  Downloading '~s' ...", [Url]),
-    Start = support:timestamp(),
-    case download(Url) of
-        {ok, Body} -> handleOk(Options, Url, Body, support:timestamp() - Start);
-        {httpError, Code} -> handleHttpError(Url, Code, support:timestamp() - Start)
+    TotalTries = 5,
+    case downloadWithRetry(Url, 1, TotalTries) of
+	{ok, Body} ->
+	    file_support:write_response_to_file(Options#options.basedir, Body, Url),
+	    Links = extraction:extract_links(Url, Body),
+	    Links;
+	failed ->
+	    io:format("  *** failed to download '~s' ~n", [Url]),
+	    []
     end.
 
 -ifdef(TEST).
