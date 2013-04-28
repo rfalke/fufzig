@@ -118,7 +118,12 @@ get_pattern_function_test_() ->
      ?_assertEqual(true, evalPattern(",,", "cc")),
 
      ?_assertEqual(true, evalPattern(".^a\$.^b\$", "a")),
-     ?_assertEqual(false, evalPattern(".^a\$.^b\$", "b"))
+     ?_assertEqual(false, evalPattern(".^a\$.^b\$", "b")),
+
+     ?_assertEqual(true, evalPattern(",a,bc,b", "a")),
+     ?_assertEqual(false, evalPattern(",a,bc,b", "bc")),
+     ?_assertEqual(true, evalPattern(",a,bc,b", "xby")),
+     ?_assertEqual(false, evalPattern(",a,bc,b", "xy"))
     ].
 
 
