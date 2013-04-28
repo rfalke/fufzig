@@ -19,8 +19,8 @@ adjust_file_name(Fname)->
     end.
 
 write_response_to_file(BasePath, Content, Url) ->
-    {ok, _Proto, Host, _Port, Path, _Query} = url:split_full(Url),
-    Fname = lists:concat([BasePath, "/", Host, Path]),
+    {ok, _Proto, Host, _Port, Path, Query} = url:split_full(Url),
+    Fname = BasePath++ "/"++ Host++Path++Query,
     Fname2 = adjust_file_name(Fname),
     ok = ensure_parent_dir_exists(Fname2),
     Dir = filename:dirname(Fname2),
@@ -99,7 +99,7 @@ write_test() ->
     Path = mktemp(),
     try
 	write_response_to_file(Path, "foobar", "http://www.example.com/abc/def.html?foo=bar"),
-	{ok,Content} = file:read_file(Path++"/www.example.com/abc/def.html"),
+	{ok,Content} = file:read_file(Path++"/www.example.com/abc/def.html?foo=bar"),
 	?_assertEqual("foobar", binary_to_list(Content))
     after
 	rm_r(Path)
