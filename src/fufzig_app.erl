@@ -33,37 +33,47 @@ main()->
 %% ===================================================================
 
 driver(Options, Url) ->
-    driver(Options, [Url], []).
+    driver(Options, 1, [Url], sets:new()).
 
-driver(Options, Todo, Done) ->
-    io:format("driver: ~B urls done and ~B urls todo~n", [length(Done), length(Todo)]),
-    case Todo of
-        [] -> io:format("Finished downloading ~n");
-        [Url | Todo2] ->
-            NewUrls0 = filter_urls(handle_one_url(Options, Url), Todo, Done),
-            TestFun = Options#options.acceptUrlTest,
-            NewUrls = [X || X <- NewUrls0, TestFun(X)],
-            case NewUrls of
-                [_H | _T] -> io:format("  found ~B new urls to crawl: ~p ~n", [length(NewUrls), NewUrls]);
-                [] -> ok
-            end,
-            driver(Options, Todo2 ++ NewUrls, [Url | Done])
+driver(Options, BatchNumber, Todo, DoneSet)->
+    io:format("driver: start batch ~B with ~B urls (~B urls already done)~n", 
+	      [BatchNumber, length(Todo), sets:size(DoneSet)]),
+    NewDoneSet = sets:union(DoneSet, sets:from_list(Todo)),
+
+    NewTodoList = sets:to_list(doOneBatch(Options, Todo, 0, length(Todo), sets:new())),
+    NewTodoListFiltered = [X || X <- NewTodoList, not sets:is_element(X, NewDoneSet)],
+    NewTodoListSorted = ordsets:to_list(ordsets:from_list(NewTodoListFiltered)),
+    case NewTodoListSorted of
+        [] -> io:format("Finished downloading~n");
+	_ -> driver(Options, BatchNumber+1, NewTodoListSorted, NewDoneSet)
     end.
 
-filter_urls(NewUrls, Todo, Done) ->
-    Known = sets:union(sets:from_list(Todo), sets:from_list(Done)),
-    [X || X <- NewUrls, not sets:is_element(X, Known)].
+doOneBatch(Options, Todo, NumDone, NumTotal, AlreadyKnownNewUrlsSet)->
+    case Todo of
+        [] -> AlreadyKnownNewUrlsSet;
+        [Url | Todo2] ->
+	    Prefix = lists:flatten(io_lib:format("~B/~B", [NumDone+1, NumTotal])),
+            NewUrls0 = handle_one_url(Options, Url, Prefix),
+            TestFun = Options#options.acceptUrlTest,
+            NewUrls = [X || X <- NewUrls0, TestFun(X) andalso (not sets:is_element(X, AlreadyKnownNewUrlsSet))],
+            case NewUrls of
+                [_H | _T] -> io:format("    found ~B new urls to crawl: ~p ~n", [length(NewUrls), NewUrls]);
+                [] -> ok
+            end,
+	    AllNewUrls = sets:union(AlreadyKnownNewUrlsSet, sets:from_list(NewUrls)),
+            doOneBatch(Options, Todo2, NumDone+1, NumTotal, AllNewUrls)
+    end.
 
 format_bytes(N) ->
     support:format_int_with_thousand_separator(N, ",") ++ " bytes".
 
-downloadWithRetry(Url, WhichTry, TotalTries) ->
+downloadWithRetry(Url, WhichTry, TotalTries, Prefix) ->
     case WhichTry>TotalTries of
 	true -> failed;
 	false ->
-	    io:format("  Downloading '~s' ~B/~B ...", [Url, WhichTry, TotalTries]),
+	    io:format("  ~s downloading '~s' ~B/~B ...", [Prefix, Url, WhichTry, TotalTries]),
 	    Start = support:timestamp(),
-	    Resp = httpc:request(get, {Url, []}, [{timeout,10*1000}], []),
+	    Resp = httpc:request(get, {Url, []}, [{timeout,90 * 1000}], []),
 	    Time = support:timestamp() - Start,
 	    case Resp of
 		{ok, {{_Version, 200, _ReasonPhrase}, _Headers, Body}} ->
@@ -73,16 +83,16 @@ downloadWithRetry(Url, WhichTry, TotalTries) ->
 		    io:format(" got ~B after ~.1f seconds~n", [ErrorCode, Time]),
 		    case ErrorCode==403 orelse ErrorCode==404 of
 			true -> failed;
-			false -> downloadWithRetry(Url, WhichTry+1, TotalTries)
+			false -> downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix)
 		    end;
 		_ -> io:format(" got ~p after ~.1f seconds~n", [Resp, Time]),
-		     downloadWithRetry(Url, WhichTry+1, TotalTries)
+		     downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix)
 	    end
     end.
 
-handle_one_url(Options, Url) ->
+handle_one_url(Options, Url, Prefix) ->
     TotalTries = 5,
-    case downloadWithRetry(Url, 1, TotalTries) of
+    case downloadWithRetry(Url, 1, TotalTries, Prefix) of
 	{ok, Body} ->
 	    file_support:write_response_to_file(Options#options.basedir, Body, Url),
 	    Links = extraction:extract_links(Url, Body),

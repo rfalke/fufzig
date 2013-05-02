@@ -28,7 +28,7 @@ write_response_to_file(BasePath, Content, Url) ->
     Name2 = lists:sublist(Name,100),
     Fname3 = Dir++"/"++Name2,
     ok = file:write_file(Fname3, Content),
-    io:format("  saved to ~s~n", [Fname3]),
+    io:format("    saved to ~s~n", [Fname3]),
     ok.
 
 file_info_of(Path) ->
