@@ -1,3 +1,7 @@
+%% @author Raimar Falke
+%% @copyright 2012 Raimar Falke
+% Distrbuted under GNU General Public License version 2
+
 -module(url).
 
 -export([split_full/1, remove_anchor/1, make_link_absolute/2, make_full_url/1,is_supported_url/1]).

@@ -1,3 +1,7 @@
+%% @author Raimar Falke
+%% @copyright 2012 Raimar Falke
+% Distrbuted under GPL
+
 -module(cli_options).
 
 -export([parse_options/1]).

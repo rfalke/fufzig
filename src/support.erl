@@ -1,3 +1,7 @@
+%% @author Raimar Falke
+%% @copyright 2012 Raimar Falke
+% Distrbuted under GNU General Public License version 2
+
 -module(support).
 
 -export([timestamp/0, format_int_with_thousand_separator/2]).

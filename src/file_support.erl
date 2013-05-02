@@ -1,3 +1,7 @@
+%% @author Raimar Falke
+%% @copyright 2012 Raimar Falke
+% Distrbuted under GNU General Public License version 2
+
 -module(file_support).
 
 -export([write_response_to_file/3]).
@@ -117,6 +121,7 @@ write2_test() ->
     end.
 
 write3_test() ->
+    spawn(1),
     Path = mktemp(),
     try
 	write_response_to_file(Path, "content1", "https://www.example.com:80/abc"),

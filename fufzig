@@ -1,4 +1,8 @@
 #!/bin/sh
 
+# @author Raimar Falke
+# @copyright 2012 Raimar Falke
+# Distrbuted under GNU General Public License version 2
+
 EBIN=`cd $(dirname $0);pwd`/ebin
 erl -noshell -pz "$EBIN" -s fufzig_app main -extra "$@"
