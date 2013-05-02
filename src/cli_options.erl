@@ -1,5 +1,5 @@
 %% @author Raimar Falke
-%% @copyright 2012 Raimar Falke
+%% @copyright 2013 Raimar Falke
 % Distrbuted under GPL
 
 -module(cli_options).
@@ -30,12 +30,13 @@ is_same_host(Seedurl, Url) ->
     end.
 
 usage() ->
-    io:format("fufzig [-o DIR] [-r|-r+|-r++] [-i PATTERNS] URL~n"),
+    io:format("fufzig [-o DIR] [-r|-r+|-r++] [-i PATTERNS] [-p THREADS] URL~n"),
     io:format("  -o DIR       set the output directory [defaults to '.']~n"),
     io:format("  -r           limit recursive download to the sub directory of the initial URL~n"),
     io:format("  -r+          limit recursive download to host of the initial URL~n"),
     io:format("  -r++         do not limit the recursive download~n"),
     io:format("  -i PATTERNS  only visit urls which match PATTERNS~n"),
+    io:format("  -p THREADS   download with THREADS in parallel~n"),
     io:format("~n"),
     io:format("PATTERNS consists of a delimeter char and a list of positive and negative~n"),
     io:format("patterns separated by the delimter char. The url is matched against each~n"),
@@ -69,6 +70,8 @@ parse_options(Args) ->
 
 parse_options(Args, Options) ->
     case Args of
+        ["-p", X | T] ->
+            parse_options(T, Options#options{parallel = list_to_integer(X)});
         ["-i", X | T] ->
             parse_options(T, Options#options{includePattern = X});
         ["-o", X | T] ->

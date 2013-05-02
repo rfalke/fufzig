@@ -1,10 +1,10 @@
 %% @author Raimar Falke
-%% @copyright 2012 Raimar Falke
+%% @copyright 2013 Raimar Falke
 % Distrbuted under GNU General Public License version 2
 
 -module(support).
 
--export([timestamp/0, format_int_with_thousand_separator/2]).
+-export([timestamp/0, format_int_with_thousand_separator/2, format_bytes/1, add_index/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -24,6 +24,16 @@ format_int_with_thousand_separator(N, Sep) ->
     S = integer_to_list(N),
     lists:reverse(helper(lists:reverse(S), Sep)).
 
+format_bytes(N) ->
+    format_int_with_thousand_separator(N, ",") ++ " bytes".
+
+add_index(List)->
+    add_index(List, 1).
+
+add_index([H|T], N) ->
+    [{N,H} | add_index(T, N+1)];
+add_index([],_) -> [].
+
 -ifdef(TEST).
 
 format_int_with_thousand_separator_test_() ->
@@ -35,5 +45,9 @@ format_int_with_thousand_separator_test_() ->
      ?_assertEqual("12,345", format_int_with_thousand_separator(12345,",")),
      ?_assertEqual("123,456", format_int_with_thousand_separator(123456,",")),
      ?_assertEqual("1,234,567", format_int_with_thousand_separator(1234567,","))
+    ].
+
+add_index_test_() ->
+    [?_assertEqual([{1,first}, {2, second}], add_index([first,second]))
     ].
 -endif.
