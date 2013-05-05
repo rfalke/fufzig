@@ -15,6 +15,12 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-record(context,{acceptUrlTest=unset,
+		 log,
+		 fileStoragePid,
+		 workerPoolPid,
+		 parallel}).
+
 %% ===================================================================
 %% Application callbacks
 %% ===================================================================
@@ -29,82 +35,110 @@ main()->
     inets:start(),
     Args=init:get_plain_arguments(),
     Options=cli_options:parse_options(Args),
-    driver(Options, url:make_full_url(Options#options.seedurl)),
+    Log = case Options#options.parallel>1 of
+	      true-> fun parallelLog/3;
+	      false->fun seqLog/3
+	  end,
+    WorkerPoolPid = case Options#options.parallel>1 of
+			true-> semaphore:start(Options#options.parallel);
+			false->unset
+		    end,
+    FileStoragePid = spawn(fun() -> write_response_loop(Log, Options#options.basedir) end),
+    Context = #context{log=Log, 
+		       parallel=Options#options.parallel, 
+		       fileStoragePid=FileStoragePid, 
+		       workerPoolPid=WorkerPoolPid,
+		       acceptUrlTest=Options#options.acceptUrlTest},
+    driver(Context, url:make_full_url(Options#options.seedurl)),
     halt(0).
 
 %% ===================================================================
 %% Implementation
 %% ===================================================================
+write_response_loop(Log, Dir)->
+    receive
+	{save, Url, Body, Pid} ->
+	    Fname = file_support:write_response_to_file(Dir, Body, Url),
+	    Pid!{writtenTo, Fname},
+	    write_response_loop(Log, Dir)
+    end.
 
-driver(Options, Url) ->
-    driver(Options, 1, [Url], sets:new()).
+driver(Context, Url) ->
+    driver(Context, 1, [Url], sets:new()).
 
-driver(Options, BatchNumber, Todo, DoneSet)->
+driver(Context, BatchNumber, Todo, DoneSet)->
     io:format("driver: start batch ~B with ~B urls (~B urls already done)~n",
 	      [BatchNumber, length(Todo), sets:size(DoneSet)]),
     NewDoneSet = sets:union(DoneSet, sets:from_list(Todo)),
 
     NewTodoList = sets:to_list(
-		    case Options#options.parallel>1 of
+		    case Context#context.parallel>1 of
 			true->
-			    doOneBatchParallel(Options, Todo, length(Todo));
+			    doOneBatchParallel(Context, Todo, length(Todo));
 			false->
-			    doOneBatchSequential(Options, Todo, 0, length(Todo), sets:new())
+			    doOneBatchSequential(Context, Todo, 0, length(Todo), sets:new())
 		    end
 		    ),
     NewTodoListFiltered = [X || X <- NewTodoList, not sets:is_element(X, NewDoneSet)],
     NewTodoListSorted = ordsets:to_list(ordsets:from_list(NewTodoListFiltered)),
     case NewTodoListSorted of
         [] -> io:format("Finished downloading~n");
-	_ -> driver(Options, BatchNumber+1, NewTodoListSorted, NewDoneSet)
+	_ -> driver(Context, BatchNumber+1, NewTodoListSorted, NewDoneSet)
     end.
 
-seqLog(Msg, Args)->
-    io:format(Msg++"~n", Args).
-seqLogStart(Msg, Args)->
-    io:format("  "++Msg, Args).
-seqLogFinished(Msg, Args)->
-    io:format(" "++Msg++"~n", Args).
+seqLog(What, Msg, Args)->
+    case What of
+	start -> 
+	    io:format("  "++Msg, Args);
+	finished -> 
+	    io:format(" "++Msg++"~n", Args);
+	other ->
+	    io:format(Msg++"~n", Args)
+    end.
 
-doOneBatchSequential(Options, Todo, NumDone, NumTotal, AlreadyKnownNewUrlsSet)->
+doOneBatchSequential(Context, Todo, NumDone, NumTotal, AlreadyKnownNewUrlsSet)->
     case Todo of
         [] -> AlreadyKnownNewUrlsSet;
         [Url | Todo2] ->
 	    Prefix = lists:flatten(io_lib:format("~B/~B", [NumDone+1, NumTotal])),
-            NewUrls0 = handle_one_url(Options, Url, Prefix, fun seqLog/2, fun seqLogStart/2, fun seqLogFinished/2),
-            TestFun = Options#options.acceptUrlTest,
+            NewUrls0 = handle_one_url(Context, Url, Prefix),
+            TestFun = Context#context.acceptUrlTest,
             NewUrls = [X || X <- NewUrls0, TestFun(X) andalso (not sets:is_element(X, AlreadyKnownNewUrlsSet))],
             case NewUrls of
                 [_H | _T] -> io:format("    found ~B new urls to crawl: ~p ~n", [length(NewUrls), NewUrls]);
                 [] -> ok
             end,
 	    AllNewUrls = sets:union(AlreadyKnownNewUrlsSet, sets:from_list(NewUrls)),
-            doOneBatchSequential(Options, Todo2, NumDone+1, NumTotal, AllNewUrls)
+            doOneBatchSequential(Context, Todo2, NumDone+1, NumTotal, AllNewUrls)
     end.
 
-parallelLog(Msg, Args)->
-    io:format("  ~p  "++Msg++"~n", [self()]++Args).
-parallelLogStart(Msg, Args)->
-    io:format("  ~p  "++Msg++"~n", [self()]++Args).
-parallelLogFinished(Msg, Args)->
-    io:format("  ~p    "++Msg++"~n", [self()]++Args).
+parallelLog(What, Msg, Args)->
+    case What of
+	start -> 
+	    io:format("  ~p  "++Msg++"~n", [self()]++Args);
+	finished -> 
+	    io:format("  ~p    "++Msg++"~n", [self()]++Args);
+	other ->
+	    io:format("  ~p  "++Msg++"~n", [self()]++Args)
+    end.
 
-doOneBatchParallel(Options, Todo, NumTotal)->
+doOneBatchParallel(Context, Todo, NumTotal)->
     Urls = support:add_index(Todo),
-    Processes = Options#options.parallel,
+    Processes = Context#context.parallel,
+    WorkerPoolPid=Context#context.workerPoolPid,
     ListOfNewUrls = putil:pmap(
       fun({No,Url}) ->
+	      semaphore:obtain(WorkerPoolPid),
 	      Prefix = lists:flatten(io_lib:format("~B/~B", [No, NumTotal])),
-	      NewUrls = handle_one_url(Options, Url, Prefix,
-				       fun parallelLog/2, fun parallelLogStart/2, fun parallelLogFinished/2),
+	      NewUrls = handle_one_url(Context, Url, Prefix),
+	      semaphore:release(WorkerPoolPid),
 	      NewUrls
       end,
-      Urls, Processes),
+      Urls, 100*Processes),
     AllAsSet = lists:foldl(fun(X, Set) -> sets:union(Set, sets:from_list(X)) end, sets:new(), ListOfNewUrls),
-    TestFun = Options#options.acceptUrlTest,
+    TestFun = Context#context.acceptUrlTest,
     FilteredSet = sets:filter(TestFun, AllAsSet),
     FilteredSet.
-
 
 % From http://blog.jebu.net/2009/09/erlang-tap-to-the-twitter-stream/
 receive_chunk(TimeoutInSec, RequestId, DataParts) ->
@@ -134,38 +168,42 @@ request(Url, TimeoutInSec)->
 	    {error, requestError, Other}
     end.
 
-downloadWithRetry(_Url, WhichTry, TotalTries, _Prefix, _Log, _LogStart, _LogFinished) when WhichTry > TotalTries ->
+downloadWithRetry(_Url, WhichTry, TotalTries, _Prefix, _Log) when WhichTry > TotalTries ->
     failed;
-downloadWithRetry(Url, WhichTry, TotalTries, Prefix, Log, LogStart, LogFinished)  ->
-    LogStart("~s downloading '~s' ~B/~B ...", [Prefix, Url, WhichTry, TotalTries]),
+downloadWithRetry(Url, WhichTry, TotalTries, Prefix, Log)  ->
+    Log(start, "~s downloading '~s' ~B/~B ...", [Prefix, Url, WhichTry, TotalTries]),
     Start = support:timestamp(),
     Resp = request(Url, 6),
     Time = support:timestamp() - Start,
     case Resp of
 	{ok, Body} ->
 	    Bytes = length(Body),
-	    LogFinished("got ~s in ~.1f seconds (~s)", [support:format_bytes(Bytes), Time, support:format_rate(Bytes, Time)]),
+	    Log(finished, "got ~s in ~.1f seconds (~s)", [support:format_bytes(Bytes), Time, support:format_rate(Bytes, Time)]),
 	    {ok,Body};
 	{error, httpError, ErrorCode} ->
-	    LogFinished("got ~B after ~.1f seconds", [ErrorCode, Time]),
+	    Log(finished, "got ~B after ~.1f seconds", [ErrorCode, Time]),
 	    case ErrorCode==403 orelse ErrorCode==404 of
 		true -> failed;
-		false -> downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix, Log, LogStart, LogFinished)
+		false -> downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix, Log)
 	    end;
-	_ -> LogFinished("got ~p after ~.1f seconds", [Resp, Time]),
-	     downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix, Log, LogStart, LogFinished)
+	_ -> Log(finished, "got ~p after ~.1f seconds", [Resp, Time]),
+	     downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix, Log)
     end.
 
-handle_one_url(Options, Url, Prefix, Log, LogStart, LogFinished) ->
+handle_one_url(Context, Url, Prefix) ->
     TotalTries = 5,
-    case downloadWithRetry(Url, 1, TotalTries, Prefix, Log, LogStart, LogFinished) of
+    Log=Context#context.log,
+    case downloadWithRetry(Url, 1, TotalTries, Prefix, Log) of
 	{ok, Body} ->
-	    Fname = file_support:write_response_to_file(Options#options.basedir, Body, Url),
-	    Log("    saved to ~s", [Fname]),
+	    Context#context.fileStoragePid!{save, Url, Body, self()},
+	    receive
+		{writtenTo, Fname}-> 
+		    Log(other, "    saved to ~s", [Fname])
+	    end,
 	    Links = extraction:extract_links(Url, Body),
 	    Links;
 	failed ->
-	    Log("    *** failed to download '~s'", [Url]),
+	    Log(other, "    *** failed to download '~s'", [Url]),
 	    []
     end.
 
