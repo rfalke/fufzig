@@ -4,7 +4,7 @@
 
 -module(support).
 
--export([timestamp/0, format_int_with_thousand_separator/2, format_bytes/1, add_index/1]).
+-export([timestamp/0, format_int_with_thousand_separator/2, format_bytes/1, add_index/1, binary_join/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -34,6 +34,10 @@ add_index([H|T], N) ->
     [{N,H} | add_index(T, N+1)];
 add_index([],_) -> [].
 
+binary_join(List) ->
+    F = fun(A, B) -> <<A/binary, B/binary>> end,
+    lists:foldr(F, <<>>, List).
+
 -ifdef(TEST).
 
 format_int_with_thousand_separator_test_() ->
@@ -50,4 +54,9 @@ format_int_with_thousand_separator_test_() ->
 add_index_test_() ->
     [?_assertEqual([{1,first}, {2, second}], add_index([first,second]))
     ].
+
+binary_join_test_() ->
+    [?_assertEqual( <<1,2,3,4>> , binary_join([ <<1,2>> , <<3,4>> ]))
+    ].
+
 -endif.

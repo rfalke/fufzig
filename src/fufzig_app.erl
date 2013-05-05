@@ -95,7 +95,7 @@ doOneBatchParallel(Options, Todo, NumTotal)->
     ListOfNewUrls = putil:pmap(
       fun({No,Url}) ->
 	      Prefix = lists:flatten(io_lib:format("~B/~B", [No, NumTotal])),
-	      NewUrls = handle_one_url(Options, Url, Prefix, 
+	      NewUrls = handle_one_url(Options, Url, Prefix,
 				       fun parallelLog/2, fun parallelLogStart/2, fun parallelLogFinished/2),
 	      NewUrls
       end,
@@ -105,27 +105,54 @@ doOneBatchParallel(Options, Todo, NumTotal)->
     FilteredSet = sets:filter(TestFun, AllAsSet),
     FilteredSet.
 
-downloadWithRetry(Url, WhichTry, TotalTries, Prefix, Log, LogStart, LogFinished) ->
-    case WhichTry>TotalTries of
-	true -> failed;
-	false ->
-	    LogStart("~s downloading '~s' ~B/~B ...", [Prefix, Url, WhichTry, TotalTries]),
-	    Start = support:timestamp(),
-	    Resp = httpc:request(get, {Url, []}, [{timeout,90 * 1000}], []),
-	    Time = support:timestamp() - Start,
-	    case Resp of
-		{ok, {{_Version, 200, _ReasonPhrase}, _Headers, Body}} ->
-		    LogFinished("got ~s in ~.1f seconds", [support:format_bytes(length(Body)), Time]),
-		    {ok,Body};
-		{ok, {{_Version, ErrorCode, _ReasonPhrase}, _Headers, _Body}} ->
-		    LogFinished("got ~B after ~.1f seconds", [ErrorCode, Time]),
-		    case ErrorCode==403 orelse ErrorCode==404 of
-			true -> failed;
-			false -> downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix, Log, LogStart, LogFinished)
-		    end;
-		_ -> LogFinished("got ~p after ~.1f seconds", [Resp, Time]),
-		     downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix, Log, LogStart, LogFinished)
-	    end
+
+% From http://blog.jebu.net/2009/09/erlang-tap-to-the-twitter-stream/
+receive_chunk(TimeoutInSec, RequestId, DataParts) ->
+    receive
+	{http, {RequestId, {error, Reason}}} when (Reason =:= etimedout) orelse (Reason =:= timeout) ->
+	    {error, timeout};
+	{http, {RequestId, {{_, ErrorCode, _}, _Headers, _}}} ->
+	    {error, httpError, ErrorCode};
+	{http, {RequestId, Result}} ->
+	    {error, other, Result};
+
+	{http,{RequestId, stream_start, _Headers}} ->
+	    receive_chunk(TimeoutInSec, RequestId, DataParts);
+	{http,{RequestId, stream, Data}} ->
+	    receive_chunk(TimeoutInSec, RequestId,DataParts++[Data]);
+	{http,{RequestId, stream_end, _Headers}} ->
+	    {ok, binary_to_list(support:binary_join(DataParts))}
+    after TimeoutInSec * 1000 ->
+	    {error, timeout}
+    end.
+
+request(Url, TimeoutInSec)->
+    case httpc:request(get, {Url, []}, [], [{sync,false},{stream,self}]) of
+	{ok, RequestId} ->
+	    receive_chunk(TimeoutInSec, RequestId, []);
+	Other ->
+	    {error, requestError, Other}
+    end.
+
+downloadWithRetry(_Url, WhichTry, TotalTries, _Prefix, _Log, _LogStart, _LogFinished) when WhichTry > TotalTries ->
+    failed;
+downloadWithRetry(Url, WhichTry, TotalTries, Prefix, Log, LogStart, LogFinished)  ->
+    LogStart("~s downloading '~s' ~B/~B ...", [Prefix, Url, WhichTry, TotalTries]),
+    Start = support:timestamp(),
+    Resp = request(Url, 6),
+    Time = support:timestamp() - Start,
+    case Resp of
+	{ok, Body} ->
+	    LogFinished("got ~s in ~.1f seconds", [support:format_bytes(length(Body)), Time]),
+	    {ok,Body};
+	{error, httpError, ErrorCode} ->
+	    LogFinished("got ~B after ~.1f seconds", [ErrorCode, Time]),
+	    case ErrorCode==403 orelse ErrorCode==404 of
+		true -> failed;
+		false -> downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix, Log, LogStart, LogFinished)
+	    end;
+	_ -> LogFinished("got ~p after ~.1f seconds", [Resp, Time]),
+	     downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix, Log, LogStart, LogFinished)
     end.
 
 handle_one_url(Options, Url, Prefix, Log, LogStart, LogFinished) ->
