@@ -19,6 +19,7 @@
 		 log,
 		 fileStoragePid,
 		 workerPoolPid,
+		 urlCollectorPid,
 		 parallel}).
 
 %% ===================================================================
@@ -44,12 +45,16 @@ main()->
 			false->unset
 		    end,
     FileStoragePid = spawn(fun() -> write_response_loop(Log, Options#options.basedir) end),
+    SeedUrl = url:make_full_url(Options#options.seedurl),
+    ShowAddedUrls = Options#options.parallel =< 1,
+    UrlCollectorPid = spawn(fun() -> collect_urls_loop(sets:from_list([SeedUrl]), ShowAddedUrls) end),
     Context = #context{log=Log, 
 		       parallel=Options#options.parallel, 
 		       fileStoragePid=FileStoragePid, 
 		       workerPoolPid=WorkerPoolPid,
+		       urlCollectorPid=UrlCollectorPid,
 		       acceptUrlTest=Options#options.acceptUrlTest},
-    driver(Context, url:make_full_url(Options#options.seedurl)),
+    driver(Context),
     halt(0).
 
 %% ===================================================================
@@ -63,27 +68,51 @@ write_response_loop(Log, Dir)->
 	    write_response_loop(Log, Dir)
     end.
 
-driver(Context, Url) ->
-    driver(Context, 1, [Url], sets:new()).
+collect_urls_loop(Urls, Verbose)->
+    receive
+	{add, _BaseUrl, NewUrls, Pid} ->
+	    case Verbose of
+		true ->
+		    ReallyNewUrls = [X || X <- sets:to_list(NewUrls), (not sets:is_element(X, Urls))],
+		    case ReallyNewUrls of
+			[_H | _T] -> 
+			    Sorted = ordsets:to_list(ordsets:from_list(ReallyNewUrls)),
+			    io:format("    found ~B new urls to crawl: ~p ~n", [length(Sorted), Sorted]);
+			[] -> ok
+		    end;
+		false->ok
+	    end,
+	    NewSet = sets:union(Urls, NewUrls),
+	    Pid!added,
+	    collect_urls_loop(NewSet, Verbose);
+	{retrieve,Pid} ->
+	    Pid!{knownUrls, ordsets:from_list(sets:to_list(Urls))},
+	    collect_urls_loop(sets:new(), Verbose)
+    end.
 
-driver(Context, BatchNumber, Todo, DoneSet)->
-    io:format("driver: start batch ~B with ~B urls (~B urls already done)~n",
-	      [BatchNumber, length(Todo), sets:size(DoneSet)]),
-    NewDoneSet = sets:union(DoneSet, sets:from_list(Todo)),
+driver(Context) ->
+    driver(Context, 1, sets:new()).
 
-    NewTodoList = sets:to_list(
-		    case Context#context.parallel>1 of
-			true->
-			    doOneBatchParallel(Context, Todo, length(Todo));
-			false->
-			    doOneBatchSequential(Context, Todo, 0, length(Todo), sets:new())
-		    end
-		    ),
-    NewTodoListFiltered = [X || X <- NewTodoList, not sets:is_element(X, NewDoneSet)],
-    NewTodoListSorted = ordsets:to_list(ordsets:from_list(NewTodoListFiltered)),
-    case NewTodoListSorted of
+driver(Context, BatchNumber, DoneSet)->
+    Context#context.urlCollectorPid!{retrieve,self()},
+    receive
+	{knownUrls,RawTodoList}->ok
+    end,
+
+    TodoList = [X || X <- RawTodoList, not sets:is_element(X, DoneSet)],
+    case TodoList of
         [] -> io:format("Finished downloading~n");
-	_ -> driver(Context, BatchNumber+1, NewTodoListSorted, NewDoneSet)
+	_ -> 
+	    io:format("driver: start batch ~B with ~B urls (~B urls already done)~n",
+		      [BatchNumber, length(TodoList), sets:size(DoneSet)]),
+	    NewDoneSet = sets:union(DoneSet, sets:from_list(TodoList)),
+	    NumTodos=length(TodoList),
+	    TodoListWithPrefix = [{Url, lists:flatten(io_lib:format("~B/~B", [No, NumTodos]))} || {No, Url}<-support:add_index(TodoList)],
+	    case Context#context.parallel>1 of
+		true-> doOneBatchParallel(Context, TodoListWithPrefix);
+		false-> doOneBatchSequential(Context, TodoListWithPrefix)
+	    end,
+	    driver(Context, BatchNumber+1, NewDoneSet)
     end.
 
 seqLog(What, Msg, Args)->
@@ -96,20 +125,12 @@ seqLog(What, Msg, Args)->
 	    io:format(Msg++"~n", Args)
     end.
 
-doOneBatchSequential(Context, Todo, NumDone, NumTotal, AlreadyKnownNewUrlsSet)->
+doOneBatchSequential(Context, Todo)->
     case Todo of
-        [] -> AlreadyKnownNewUrlsSet;
-        [Url | Todo2] ->
-	    Prefix = lists:flatten(io_lib:format("~B/~B", [NumDone+1, NumTotal])),
-            NewUrls0 = handle_one_url(Context, Url, Prefix),
-            TestFun = Context#context.acceptUrlTest,
-            NewUrls = [X || X <- NewUrls0, TestFun(X) andalso (not sets:is_element(X, AlreadyKnownNewUrlsSet))],
-            case NewUrls of
-                [_H | _T] -> io:format("    found ~B new urls to crawl: ~p ~n", [length(NewUrls), NewUrls]);
-                [] -> ok
-            end,
-	    AllNewUrls = sets:union(AlreadyKnownNewUrlsSet, sets:from_list(NewUrls)),
-            doOneBatchSequential(Context, Todo2, NumDone+1, NumTotal, AllNewUrls)
+        [] -> ok;
+        [{Url,Prefix} | Tail] ->
+            handle_one_url(Context, Url, Prefix),
+            doOneBatchSequential(Context, Tail)
     end.
 
 parallelLog(What, Msg, Args)->
@@ -122,23 +143,17 @@ parallelLog(What, Msg, Args)->
 	    io:format("  ~p  "++Msg++"~n", [self()]++Args)
     end.
 
-doOneBatchParallel(Context, Todo, NumTotal)->
-    Urls = support:add_index(Todo),
+doOneBatchParallel(Context, Urls)->
     Processes = Context#context.parallel,
-    WorkerPoolPid=Context#context.workerPoolPid,
-    ListOfNewUrls = putil:pmap(
-      fun({No,Url}) ->
+    WorkerPoolPid = Context#context.workerPoolPid,
+    putil:pmap(
+      fun({Url, Prefix}) ->
 	      semaphore:obtain(WorkerPoolPid),
-	      Prefix = lists:flatten(io_lib:format("~B/~B", [No, NumTotal])),
-	      NewUrls = handle_one_url(Context, Url, Prefix),
+	      handle_one_url(Context, Url, Prefix),
 	      semaphore:release(WorkerPoolPid),
-	      NewUrls
+	      ok
       end,
-      Urls, 100*Processes),
-    AllAsSet = lists:foldl(fun(X, Set) -> sets:union(Set, sets:from_list(X)) end, sets:new(), ListOfNewUrls),
-    TestFun = Context#context.acceptUrlTest,
-    FilteredSet = sets:filter(TestFun, AllAsSet),
-    FilteredSet.
+      Urls, 100*Processes).
 
 % From http://blog.jebu.net/2009/09/erlang-tap-to-the-twitter-stream/
 receive_chunk(TimeoutInSec, RequestId, DataParts) ->
@@ -200,11 +215,15 @@ handle_one_url(Context, Url, Prefix) ->
 		{writtenTo, Fname}-> 
 		    Log(other, "    saved to ~s", [Fname])
 	    end,
-	    Links = extraction:extract_links(Url, Body),
-	    Links;
+	    AllUrls = extraction:extract_links(Url, Body),
+	    TestFun = Context#context.acceptUrlTest,
+            AcceptedUrls = [X || X <- AllUrls, TestFun(X)],
+	    Context#context.urlCollectorPid!{add, Url, sets:from_list(AcceptedUrls), self()},
+	    receive
+		added->ok
+	    end;
 	failed ->
-	    Log(other, "    *** failed to download '~s'", [Url]),
-	    []
+	    Log(other, "    *** failed to download '~s'", [Url])
     end.
 
 -ifdef(TEST).
