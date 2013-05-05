@@ -143,7 +143,8 @@ downloadWithRetry(Url, WhichTry, TotalTries, Prefix, Log, LogStart, LogFinished)
     Time = support:timestamp() - Start,
     case Resp of
 	{ok, Body} ->
-	    LogFinished("got ~s in ~.1f seconds", [support:format_bytes(length(Body)), Time]),
+	    Bytes = length(Body),
+	    LogFinished("got ~s in ~.1f seconds (~s)", [support:format_bytes(Bytes), Time, support:format_rate(Bytes, Time)]),
 	    {ok,Body};
 	{error, httpError, ErrorCode} ->
 	    LogFinished("got ~B after ~.1f seconds", [ErrorCode, Time]),

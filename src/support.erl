@@ -4,7 +4,7 @@
 
 -module(support).
 
--export([timestamp/0, format_int_with_thousand_separator/2, format_bytes/1, add_index/1, binary_join/1]).
+-export([timestamp/0, format_int_with_thousand_separator/2, format_bytes/1, add_index/1, binary_join/1, format_rate/2]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -26,6 +26,13 @@ format_int_with_thousand_separator(N, Sep) ->
 
 format_bytes(N) ->
     format_int_with_thousand_separator(N, ",") ++ " bytes".
+
+format_rate(_Bytes, TimeInSec) when TimeInSec < 0.1->
+    "--.- K/s";
+format_rate(Bytes, TimeInSec) ->
+    BytesPerSecond = float(Bytes)/TimeInSec,
+    KBPS = BytesPerSecond/1024.0,
+    lists:flatten(io_lib:format("~.1f K/s", [KBPS])).
 
 add_index(List)->
     add_index(List, 1).
@@ -57,6 +64,12 @@ add_index_test_() ->
 
 binary_join_test_() ->
     [?_assertEqual( <<1,2,3,4>> , binary_join([ <<1,2>> , <<3,4>> ]))
+    ].
+
+format_rate_test_() ->
+    [?_assertEqual("--.- K/s", format_rate(12345, 0)),
+     ?_assertEqual("12.3 K/s", format_rate(12595, 1)),
+     ?_assertEqual("6.2 K/s", format_rate(6.2*2048, 2))
     ].
 
 -endif.
