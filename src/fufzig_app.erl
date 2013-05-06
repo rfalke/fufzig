@@ -48,9 +48,9 @@ main()->
     SeedUrl = url:make_full_url(Options#options.seedurl),
     ShowAddedUrls = Options#options.parallel =< 1,
     UrlCollectorPid = spawn(fun() -> collect_urls_loop(sets:from_list([SeedUrl]), ShowAddedUrls) end),
-    Context = #context{log=Log, 
-		       parallel=Options#options.parallel, 
-		       fileStoragePid=FileStoragePid, 
+    Context = #context{log=Log,
+		       parallel=Options#options.parallel,
+		       fileStoragePid=FileStoragePid,
 		       workerPoolPid=WorkerPoolPid,
 		       urlCollectorPid=UrlCollectorPid,
 		       acceptUrlTest=Options#options.acceptUrlTest},
@@ -75,7 +75,7 @@ collect_urls_loop(Urls, Verbose)->
 		true ->
 		    ReallyNewUrls = [X || X <- sets:to_list(NewUrls), (not sets:is_element(X, Urls))],
 		    case ReallyNewUrls of
-			[_H | _T] -> 
+			[_H | _T] ->
 			    Sorted = ordsets:to_list(ordsets:from_list(ReallyNewUrls)),
 			    io:format("    found ~B new urls to crawl: ~p ~n", [length(Sorted), Sorted]);
 			[] -> ok
@@ -102,7 +102,7 @@ driver(Context, BatchNumber, DoneSet)->
     TodoList = [X || X <- RawTodoList, not sets:is_element(X, DoneSet)],
     case TodoList of
         [] -> io:format("Finished downloading~n");
-	_ -> 
+	_ ->
 	    io:format("driver: start batch ~B with ~B urls (~B urls already done)~n",
 		      [BatchNumber, length(TodoList), sets:size(DoneSet)]),
 	    NewDoneSet = sets:union(DoneSet, sets:from_list(TodoList)),
@@ -117,9 +117,9 @@ driver(Context, BatchNumber, DoneSet)->
 
 seqLog(What, Msg, Args)->
     case What of
-	start -> 
+	start ->
 	    io:format("  "++Msg, Args);
-	finished -> 
+	finished ->
 	    io:format(" "++Msg++"~n", Args);
 	other ->
 	    io:format(Msg++"~n", Args)
@@ -135,9 +135,9 @@ doOneBatchSequential(Context, Todo)->
 
 parallelLog(What, Msg, Args)->
     case What of
-	start -> 
+	start ->
 	    io:format("  ~p  "++Msg++"~n", [self()]++Args);
-	finished -> 
+	finished ->
 	    io:format("  ~p    "++Msg++"~n", [self()]++Args);
 	other ->
 	    io:format("  ~p  "++Msg++"~n", [self()]++Args)
@@ -176,7 +176,7 @@ receive_chunk(TimeoutInSec, RequestId, DataParts) ->
     end.
 
 request(Url, TimeoutInSec)->
-    case httpc:request(get, {Url, []}, [], [{sync,false},{stream,self}]) of
+    case httpc:request(get, {Url, []}, [{version, "HTTP/1.0"}], [{sync,false},{stream,self}]) of
 	{ok, RequestId} ->
 	    receive_chunk(TimeoutInSec, RequestId, []);
 	Other ->
@@ -212,7 +212,7 @@ handle_one_url(Context, Url, Prefix) ->
 	{ok, Body} ->
 	    Context#context.fileStoragePid!{save, Url, Body, self()},
 	    receive
-		{writtenTo, Fname}-> 
+		{writtenTo, Fname}->
 		    Log(other, "    saved to ~s", [Fname])
 	    end,
 	    AllUrls = extraction:extract_links(Url, Body),
