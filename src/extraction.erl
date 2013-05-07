@@ -12,12 +12,9 @@
 
 extract_links(Url, Body) ->
     Inner = fun (Pattern) ->
-		    case re:run(Body, Pattern, [global, caseless]) of
+		    case re:run(Body, Pattern, [global, caseless, {capture, all_but_first, list}]) of
 		      {match, Offsets} ->
-			    Links = [string:substr(Body, S + 1, L)
-				     || [{_, _}, {S, L}] <- Offsets],
-			    %io:format("Extraction with pattern ~p results in ~p ~n",[Pattern, Links]),
-			    Links;
+			    lists:append(Offsets);
 		      nomatch -> []
 		    end
 	    end,
