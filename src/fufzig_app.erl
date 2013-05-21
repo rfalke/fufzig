@@ -170,8 +170,16 @@ receive_chunk(TimeoutInSec, RequestId, DataParts) ->
 	{http,{RequestId, stream, Data}} ->
 	    receive_chunk(TimeoutInSec, RequestId,DataParts++[Data]);
 	{http,{RequestId, stream_end, _Headers}} ->
-	    {ok, binary_to_list(support:binary_join(DataParts))}
+	    {ok, binary_to_list(support:binary_join(DataParts))};
+
+	{http,_Msg} ->
+	    % ignore messages arriving from an old canceled request
+	    receive_chunk(TimeoutInSec, RequestId, DataParts);
+	Msg ->
+	    io:format("proccess ~p got an unknown message ~p~n", [self(), Msg]),
+	    halt()
     after TimeoutInSec * 1000 ->
+	    httpc:cancel_request(RequestId),
 	    {error, timeout}
     end.
 
