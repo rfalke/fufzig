@@ -134,13 +134,14 @@ doOneBatchSequential(Context, Todo)->
     end.
 
 parallelLog(What, Msg, Args)->
+    Now = support:now_as_string(),
     case What of
 	start ->
-	    io:format("  ~p  "++Msg++"~n", [self()]++Args);
+	    io:format("~s:  ~p  "++Msg++"~n", [Now,self()]++Args);
 	finished ->
-	    io:format("  ~p    "++Msg++"~n", [self()]++Args);
+	    io:format("~s:  ~p    "++Msg++"~n", [Now,self()]++Args);
 	other ->
-	    io:format("  ~p  "++Msg++"~n", [self()]++Args)
+	    io:format("~s:  ~p  "++Msg++"~n", [Now,self()]++Args)
     end.
 
 doOneBatchParallel(Context, Urls)->

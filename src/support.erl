@@ -4,7 +4,8 @@
 
 -module(support).
 
--export([timestamp/0, format_int_with_thousand_separator/2, format_bytes/1, add_index/1, binary_join/1, format_rate/2]).
+-export([timestamp/0, format_int_with_thousand_separator/2, format_bytes/1,
+	 add_index/1, binary_join/1, format_rate/2, now_as_string/0]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -44,6 +45,14 @@ add_index([],_) -> [].
 binary_join(List) ->
     F = fun(A, B) -> <<A/binary, B/binary>> end,
     lists:foldr(F, <<>>, List).
+
+now_as_string() ->
+    format_isotime(erlang:localtime()).
+
+format_isotime({Date, Time}) ->
+    {Y, M, D} = Date,
+    {H, Min, S} = Time,
+    lists:flatten(io_lib:format('~4..0b-~2..0b-~2..0b ~2..0b:~2..0b:~2..0b', [Y, M, D, H, Min, S])).
 
 -ifdef(TEST).
 
