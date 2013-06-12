@@ -47,7 +47,7 @@ main()->
     FileStoragePid = spawn(fun() -> write_response_loop(Log, Options#options.basedir) end),
     SeedUrl = url:make_full_url(Options#options.seedurl),
     ShowAddedUrls = Options#options.parallel =< 1,
-    UrlCollectorPid = spawn(fun() -> collect_urls_loop(sets:from_list([SeedUrl]), ShowAddedUrls) end),
+    UrlCollectorPid = spawn(fun() -> collect_urls_loop(sets:from_list([list_to_binary(SeedUrl)]), ShowAddedUrls) end),
     Context = #context{log=Log,
 		       parallel=Options#options.parallel,
 		       fileStoragePid=FileStoragePid,
@@ -280,9 +280,10 @@ downloadWithRetry(Url, WhichTry, TotalTries, Prefix, Log)  ->
 	     downloadWithRetry(Url, WhichTry+1, TotalTries, Prefix, Log)
     end.
 
-handle_one_url(Context, Url, Prefix) ->
+handle_one_url(Context, BinUrl, Prefix) ->
     TotalTries = 5,
     Log=Context#context.log,
+    Url = binary_to_list(BinUrl),
     case downloadWithRetry(Url, 1, TotalTries, Prefix, Log) of
 	{ok, Body} ->
 	    Context#context.fileStoragePid!{save, Url, Body, self()},
@@ -292,7 +293,7 @@ handle_one_url(Context, Url, Prefix) ->
 	    end,
 	    AllUrls = extraction:extract_links(Url, Body),
 	    TestFun = Context#context.acceptUrlTest,
-            AcceptedUrls = [X || X <- AllUrls, TestFun(X)],
+            AcceptedUrls = [X || X <- AllUrls, TestFun(binary_to_list(X))],
 	    Context#context.urlCollectorPid!{add, Url, sets:from_list(AcceptedUrls), self()},
 	    receive
 		added->ok

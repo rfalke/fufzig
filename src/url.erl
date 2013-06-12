@@ -14,13 +14,13 @@ is_mailto(Url) -> lists:prefix("mailto:", Url).
 
 is_javascript(Url) -> lists:prefix("javascript:", Url).
 
-is_supported_url(Url) ->
+is_supported_url(Url) when is_list(Url) ->
     case Url of
         "#" -> false;
         _ -> not(is_mailto(Url) orelse is_javascript(Url) orelse lists:prefix("http:///", Url))
     end.
 
-remove_anchor(Url) ->
+remove_anchor(Url) when is_list(Url) ->
     case Url == "#" of
         true -> Url;
         false -> [H | _] = string:tokens(Url, "#"),
@@ -73,7 +73,7 @@ get_proto(Url) ->
     {match, [Proto]} = re:run(Url, "^(https?:).*\$", [{capture, all_but_first, list}]),
     Proto.
 
-split_full(Url) ->
+split_full(Url) when is_list(Url) ->
     %io:format("url is ~p ~n", [Url]),
     case re:run(Url, "^(https?://)([a-zA-Z0-9-.]+)(:[0-9]+)?([^?]*)(.*)\$", [{capture, all_but_first, list}]) of
         {match, [Proto, Host, Port, Path0, Query]} ->
@@ -89,7 +89,7 @@ split_full(Url) ->
             nofullurl
     end.
 
-split_url(Url) ->
+split_url(Url) when is_list(Url) ->
     case split_full(Url) of
         {ok, Proto, Host, Port, AllPath, Query} ->
             {Path, Name} = rsplit(AllPath, $/),
@@ -109,7 +109,7 @@ split_url(Url) ->
             end
     end.
 
-make_link_absolute(Base, UrlPara) ->
+make_link_absolute(Base, UrlPara) when is_list(Base) and is_list(UrlPara)->
     Url = remove_anchor(UrlPara),
     {full, Host, Path, _} = split_url(Base),
     AbsoluteUrl = case split_url(remove_anchor(Url)) of
@@ -120,7 +120,7 @@ make_link_absolute(Base, UrlPara) ->
     end,
     normalize_url(AbsoluteUrl).
 
-make_full_url(UrlPara) ->
+make_full_url(UrlPara) when is_list(UrlPara) ->
     Url = remove_anchor(UrlPara),
     {match, [Proto, Host, Port, Path]} = re:run(Url, "^([a-z]+://)?([a-zA-Z0-9-.]+)(:[0-9]+)?(.*)\$",
         [{capture, all_but_first, list}]),
