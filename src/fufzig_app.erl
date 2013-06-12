@@ -207,7 +207,7 @@ doOneBatchParallel(Context, Urls)->
 	      semaphore:release(WorkerPoolPid),
 	      ok
       end,
-      Urls, 100*Processes).
+      Urls, 20*Processes).
 
 getContentLengthFromHeaders([H|T]) ->
     case H of
