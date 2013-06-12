@@ -220,7 +220,7 @@ getContentLengthFromHeaders([])->
     unknownSize.
 
 % From http://blog.jebu.net/2009/09/erlang-tap-to-the-twitter-stream/
-receive_chunk(TimeoutInSec, RequestId, DataParts, Url, StartTime, Size, Downloaded) ->
+receive_chunk(TimeoutInSec, RequestId, Content, Url, StartTime, Size, Downloaded) ->
     receive
 	{http, {RequestId, {error, Reason}}} when (Reason =:= etimedout) orelse (Reason =:= timeout) ->
 	    {error, timeout};
@@ -230,18 +230,18 @@ receive_chunk(TimeoutInSec, RequestId, DataParts, Url, StartTime, Size, Download
 	    {error, other, Result};
 
 	{http,{RequestId, stream_start, Headers}} ->
-	    receive_chunk(TimeoutInSec, RequestId, DataParts, Url, StartTime, getContentLengthFromHeaders(Headers), Downloaded);
+	    receive_chunk(TimeoutInSec, RequestId, Content, Url, StartTime, getContentLengthFromHeaders(Headers), Downloaded);
 	{http,{RequestId, stream, Data}} ->
-        receive_chunk(TimeoutInSec, RequestId, DataParts ++ [Data], Url, StartTime, Size, Downloaded+byte_size(Data));
+	    receive_chunk(TimeoutInSec, RequestId, support:binary_join([Content,Data]), Url, StartTime, Size, Downloaded+byte_size(Data));
 	{http,{RequestId, stream_end, _Headers}} ->
-	    {ok, binary_to_list(support:binary_join(DataParts))};
+	    {ok, Content};
 
 	{queryStats, Pid}->
 	    Pid!{statsFor, self(), Url, StartTime, Size, Downloaded},
-	    receive_chunk(TimeoutInSec, RequestId, DataParts, Url, StartTime, Size, Downloaded);
+	    receive_chunk(TimeoutInSec, RequestId, Content, Url, StartTime, Size, Downloaded);
 	{http,_Msg} ->
 	    % ignore messages arriving from an old canceled request
-	    receive_chunk(TimeoutInSec, RequestId, DataParts, Url, StartTime, Size, Downloaded);
+	    receive_chunk(TimeoutInSec, RequestId, Content, Url, StartTime, Size, Downloaded);
 	Msg ->
 	    io:format("proccess ~p got an unknown message ~p~n", [self(), Msg]),
 	    halt()
@@ -253,7 +253,7 @@ receive_chunk(TimeoutInSec, RequestId, DataParts, Url, StartTime, Size, Download
 request(Url, TimeoutInSec)->
     case httpc:request(get, {Url, []}, [{version, "HTTP/1.0"}], [{sync,false},{stream,self}]) of
 	{ok, RequestId} ->
-	    receive_chunk(TimeoutInSec, RequestId, [], Url, support:timestamp(), notStarted, 0);
+	    receive_chunk(TimeoutInSec, RequestId, <<>>, Url, support:timestamp(), notStarted, 0);
 	Other ->
 	    {error, requestError, Other}
     end.
@@ -267,7 +267,7 @@ downloadWithRetry(Url, WhichTry, TotalTries, Prefix, Log)  ->
     Time = support:timestamp() - Start,
     case Resp of
 	{ok, Body} ->
-	    Bytes = length(Body),
+	    Bytes = byte_size(Body),
 	    Log(finished, "got ~s in ~.1f seconds (~s)", [support:format_bytes(Bytes), Time, support:format_rate(Bytes, Time)]),
 	    {ok,Body};
 	{error, httpError, ErrorCode} ->
