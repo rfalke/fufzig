@@ -263,7 +263,7 @@ downloadWithRetry(_Url, WhichTry, TotalTries, _Prefix, _Log) when WhichTry > Tot
 downloadWithRetry(Url, WhichTry, TotalTries, Prefix, Log)  ->
     Log(start, "~s downloading '~s' ~B/~B ...", [Prefix, Url, WhichTry, TotalTries]),
     Start = support:timestamp(),
-    Resp = request(Url, 6),
+    Resp = request(Url, 12),
     Time = support:timestamp() - Start,
     case Resp of
 	{ok, Body} ->
