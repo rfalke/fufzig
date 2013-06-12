@@ -5,14 +5,14 @@
 
 -module(semaphore).
 
--export([start/1, obtain/1, release/1]).
+-export([start/1, obtain/1, release/1, stats/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
 start(Max)->
-    spawn(fun() -> run(Max, Max) end).
+    spawn(fun() -> run(Max, Max, sets:new()) end).
 
 obtain(SemaPid)->
     SemaPid!{obtain,self()},
@@ -25,27 +25,40 @@ release(SemaPid)->
     receive
 	granted-> ok
     end.
-    
-run(0, Max)->
+
+stats(SemaPid)->
+    SemaPid!{stats,self()},
     receive
-	{release, Pid} ->
-	    Pid!granted,
-	    run(1, Max)
+	{activePids,List}-> List
+    end.
+
+internalObtain(Free, Max, ActivePids, Pid)->
+    Pid!granted,
+    run(Free-1, Max, sets:add_element(Pid, ActivePids)).
+
+internalRelease(Free, Max, ActivePids, Pid)->    
+    Pid!granted,
+    run(Free+1, Max, sets:del_element(Pid, ActivePids)).
+
+internalStats(Free, Max, ActivePids, Pid)-> 
+    Pid!{activePids, sets:to_list(ActivePids)},
+    run(Free, Max, ActivePids).
+
+run(0, Max, ActivePids)->
+    receive
+	{stats, Pid} -> internalStats(0, Max, ActivePids, Pid);
+	{release, Pid} -> internalRelease(0, Max, ActivePids, Pid)
     end;
-run(Max, Max)->
+run(Max, Max, ActivePids)->
     receive
-	{obtain, Pid} ->
-	    Pid!granted,
-	    run(Max-1, Max)
+	{stats, Pid} -> internalStats(Max, Max, ActivePids, Pid);
+	{obtain, Pid} -> internalObtain(Max, Max, ActivePids, Pid)
     end;
-run(Free, Max)->
+run(Free, Max, ActivePids)->
     receive
-	{obtain, Pid} ->
-	    Pid!granted,
-	    run(Free-1, Max);
-	{release, Pid} ->
-	    Pid!granted,
-	    run(Free+1, Max)
+	{stats, Pid} -> internalStats(Free, Max, ActivePids, Pid);
+	{obtain, Pid} -> internalObtain(Free, Max, ActivePids, Pid);
+	{release, Pid} -> internalRelease(Free, Max, ActivePids, Pid)
     end.
 
 -ifdef(TEST).

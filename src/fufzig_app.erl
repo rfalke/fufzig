@@ -54,12 +54,62 @@ main()->
 		       workerPoolPid=WorkerPoolPid,
 		       urlCollectorPid=UrlCollectorPid,
 		       acceptUrlTest=Options#options.acceptUrlTest},
+    spawn(fun() -> support:repeat_call(fun()->watcher(WorkerPoolPid, UrlCollectorPid) end, 15000) end),
     driver(Context),
     halt(0).
 
 %% ===================================================================
 %% Implementation
 %% ===================================================================
+get_download_status(Pid)->
+    Pid!{queryStats, self()},
+    receive_download_status(Pid).
+
+receive_download_status(Pid)->
+    receive
+	{statsFor, Pid2, Url, StartTime, Size, Downloaded}->
+	    case Pid == Pid2 of
+		false->
+		    receive_download_status(Pid);
+		true->
+		    Time=support:timestamp()-StartTime,
+		    case Size of
+			notStarted->
+			    lists:flatten(io_lib:format("~.1fs ~p '~s'", [Time, Size, Url]));
+			unknownSize->
+			    lists:flatten(io_lib:format("~.1fs ~B/~p ~s '~s'", [Time, Downloaded,Size, support:format_rate(Downloaded, Time), Url]));
+			_ ->
+			    Percent=(Downloaded*100.0)/Size,
+			    lists:flatten(io_lib:format("~.1fs ~B/~p ~.1f% ~s '~s'", [Time, Downloaded, Size, Percent, support:format_rate(Downloaded, Time), Url]))
+		    end
+	    end
+    after 100 -> "unknown"
+    end.
+
+watcher(WorkerPoolPid, UrlCollectorPid)->
+    gc_all_processes(),
+    %support:dump_processes(),
+    UrlCollectorPid!{queryStats,self()},
+    receive
+	{numUrls,N}->
+	    Now=support:now_as_string(),
+	    io:format("~s:  there are ~B urls gathered for the next batch~n", [Now,N])
+    end,
+    case WorkerPoolPid of
+	unset->ok;
+	_->dump_active_downloads(WorkerPoolPid)
+    end.
+
+gc_all_processes()->
+    [erlang:garbage_collect(X) || X<-processes()].
+
+dump_active_downloads(WorkerPoolPid)->
+    Pids=support:add_index(semaphore:stats(WorkerPoolPid)),
+    N = length(Pids),
+    Now=support:now_as_string(),
+    io:format("~s:  dumping ~B active downloads~n", [Now,N]),
+    lists:foreach(fun({No, P})->io:format("    ~2B/~2B: ~p ~s~n",[No, N, P, get_download_status(P)]) end, Pids).
+
 write_response_loop(Log, Dir)->
     receive
 	{save, Url, Body, Pid} ->
@@ -87,7 +137,10 @@ collect_urls_loop(Urls, Verbose)->
 	    collect_urls_loop(NewSet, Verbose);
 	{retrieve,Pid} ->
 	    Pid!{knownUrls, ordsets:from_list(sets:to_list(Urls))},
-	    collect_urls_loop(sets:new(), Verbose)
+	    collect_urls_loop(sets:new(), Verbose);
+	{queryStats,Pid}->
+	    Pid!{numUrls, sets:size(Urls)},
+	    collect_urls_loop(Urls, Verbose)
     end.
 
 driver(Context) ->
@@ -156,8 +209,18 @@ doOneBatchParallel(Context, Urls)->
       end,
       Urls, 100*Processes).
 
+getContentLengthFromHeaders([H|T]) ->
+    case H of
+        {"content-length",Str}->
+            {N,[]} = string:to_integer(Str),
+            N;
+        _ -> getContentLengthFromHeaders(T)
+    end;
+getContentLengthFromHeaders([])->
+    unknownSize.
+
 % From http://blog.jebu.net/2009/09/erlang-tap-to-the-twitter-stream/
-receive_chunk(TimeoutInSec, RequestId, DataParts) ->
+receive_chunk(TimeoutInSec, RequestId, DataParts, Url, StartTime, Size, Downloaded) ->
     receive
 	{http, {RequestId, {error, Reason}}} when (Reason =:= etimedout) orelse (Reason =:= timeout) ->
 	    {error, timeout};
@@ -166,16 +229,19 @@ receive_chunk(TimeoutInSec, RequestId, DataParts) ->
 	{http, {RequestId, Result}} ->
 	    {error, other, Result};
 
-	{http,{RequestId, stream_start, _Headers}} ->
-	    receive_chunk(TimeoutInSec, RequestId, DataParts);
+	{http,{RequestId, stream_start, Headers}} ->
+	    receive_chunk(TimeoutInSec, RequestId, DataParts, Url, StartTime, getContentLengthFromHeaders(Headers), Downloaded);
 	{http,{RequestId, stream, Data}} ->
-	    receive_chunk(TimeoutInSec, RequestId,DataParts++[Data]);
+        receive_chunk(TimeoutInSec, RequestId, DataParts ++ [Data], Url, StartTime, Size, Downloaded+byte_size(Data));
 	{http,{RequestId, stream_end, _Headers}} ->
 	    {ok, binary_to_list(support:binary_join(DataParts))};
 
+	{queryStats, Pid}->
+	    Pid!{statsFor, self(), Url, StartTime, Size, Downloaded},
+	    receive_chunk(TimeoutInSec, RequestId, DataParts, Url, StartTime, Size, Downloaded);
 	{http,_Msg} ->
 	    % ignore messages arriving from an old canceled request
-	    receive_chunk(TimeoutInSec, RequestId, DataParts);
+	    receive_chunk(TimeoutInSec, RequestId, DataParts, Url, StartTime, Size, Downloaded);
 	Msg ->
 	    io:format("proccess ~p got an unknown message ~p~n", [self(), Msg]),
 	    halt()
@@ -187,7 +253,7 @@ receive_chunk(TimeoutInSec, RequestId, DataParts) ->
 request(Url, TimeoutInSec)->
     case httpc:request(get, {Url, []}, [{version, "HTTP/1.0"}], [{sync,false},{stream,self}]) of
 	{ok, RequestId} ->
-	    receive_chunk(TimeoutInSec, RequestId, []);
+	    receive_chunk(TimeoutInSec, RequestId, [], Url, support:timestamp(), notStarted, 0);
 	Other ->
 	    {error, requestError, Other}
     end.

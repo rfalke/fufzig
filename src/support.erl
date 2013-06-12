@@ -5,7 +5,8 @@
 -module(support).
 
 -export([timestamp/0, format_int_with_thousand_separator/2, format_bytes/1,
-	 add_index/1, binary_join/1, format_rate/2, now_as_string/0]).
+	 add_index/1, binary_join/1, format_rate/2, repeat_call/2,
+	dump_processes/0, now_as_string/0]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -45,6 +46,26 @@ add_index([],_) -> [].
 binary_join(List) ->
     F = fun(A, B) -> <<A/binary, B/binary>> end,
     lists:foldr(F, <<>>, List).
+
+isGenServerLoop(Pid)->
+    case erlang:process_info(Pid, [current_function]) of
+	[{current_function,X}] ->
+	    case X of
+		{gen_server,loop,6}-> true;
+		_-> false
+	    end;
+	_ -> false
+    end.
+
+dump_processes()->
+    Procs=[X || X<-processes(),not isGenServerLoop(X)],
+    lists:foreach(fun(P)->io:format("~p ==> ~p~n",[P, erlang:process_info(P, [current_function,message_queue_len,memory,stack_size,current_stacktrace])]) end, Procs).
+
+repeat_call(Fun, Delay)->
+    Fun(),
+    receive
+    after Delay->repeat_call(Fun, Delay)
+    end.
 
 now_as_string() ->
     format_isotime(erlang:localtime()).
