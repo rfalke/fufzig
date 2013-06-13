@@ -200,14 +200,14 @@ parallelLog(What, Msg, Args)->
 doOneBatchParallel(Context, Urls)->
     Processes = Context#context.parallel,
     WorkerPoolPid = Context#context.workerPoolPid,
-    putil:pmap(
+    putil:pexec(
       fun({Url, Prefix}) ->
 	      semaphore:obtain(WorkerPoolPid),
 	      handle_one_url(Context, Url, Prefix),
 	      semaphore:release(WorkerPoolPid),
 	      ok
       end,
-      Urls, 20*Processes).
+      Urls, Processes).
 
 getContentLengthFromHeaders([H|T]) ->
     case H of
