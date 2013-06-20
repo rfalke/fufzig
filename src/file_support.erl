@@ -15,7 +15,12 @@
 
 adjust_file_name(Fname)->
     case lists:suffix("/", Fname) of
-        true -> Fname ++ "index.html";
+        true ->
+	    Result = Fname ++ "index.html",
+	    case file_info_of(Result)==directory of
+		true->Result ++ ".alternative";
+		false->Result
+	    end;
         false -> case file_info_of(Fname)==directory of
 		     true->Fname ++ "/index.html";
 		     false->Fname
@@ -141,6 +146,19 @@ write4_test() ->
 	?_assertEqual("conent1", binary_to_list(Content1)),
 	{ok,Content2} = file:read_file(Path++"/www.example.com/abc/index.html"),
 	?_assertEqual("content2", binary_to_list(Content2))
+    after
+	rm_r(Path)
+    end.
+
+write5_test() ->
+    Path = mktemp(),
+    try
+	write_response_to_file(Path, "content1", "https://www.example.com:80/abc/index.html/foo"),
+	write_response_to_file(Path, "content2", "https://www.example.com:80/abc/"),
+	{ok,Content1} = file:read_file(Path++"/www.example.com/abc/index.html/foo"),
+	?assertEqual("content1", binary_to_list(Content1)),
+	{ok,Content2} = file:read_file(Path++"/www.example.com/abc/index.html.alternative"),
+	?assertEqual("content2", binary_to_list(Content2))
     after
 	rm_r(Path)
     end.
