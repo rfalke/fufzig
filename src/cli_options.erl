@@ -135,8 +135,9 @@ get_pattern_function_test_() ->
 
 
 parse_options_test() ->
-    ?_assertEqual(#options{seedurl = "url4", basedir = "dir2"},
-        parse_options(["url1", "url2", "-o", "dir1", "url3", "-o", "dir2", "url4"])).
+    Actual = parse_options(["url1", "url2", "-o", "dir1", "url3", "-o", "dir2", "url4"]),
+    ?assertEqual("url4", Actual#options.seedurl),
+    ?assertEqual("dir2", Actual#options.basedir).
 
 is_in_subdir_test_() ->
     Host="http://www.example.com",

@@ -109,7 +109,7 @@ write_test() ->
     try
 	write_response_to_file(Path, "foobar", "http://www.example.com/abc/def.html?foo=bar"),
 	{ok,Content} = file:read_file(Path++"/www.example.com/abc/def.html?foo=bar"),
-	?_assertEqual("foobar", binary_to_list(Content))
+	?assertEqual("foobar", binary_to_list(Content))
     after
 	rm_r(Path)
     end.
@@ -119,7 +119,7 @@ write2_test() ->
     try
 	write_response_to_file(Path, "foobar", "https://www.example.com:80/abc/def.html"),
 	{ok,Content} = file:read_file(Path++"/www.example.com/abc/def.html"),
-	?_assertEqual("foobar", binary_to_list(Content))
+	?assertEqual("foobar", binary_to_list(Content))
     after
 	rm_r(Path)
     end.
@@ -130,9 +130,9 @@ write3_test() ->
 	write_response_to_file(Path, "content1", "https://www.example.com:80/abc"),
 	write_response_to_file(Path, "content2", "https://www.example.com:80/abc/def.html"),
 	{ok,Content1} = file:read_file(Path++"/www.example.com/abc/index.html"),
-	?_assertEqual("conent1", binary_to_list(Content1)),
+	?assertEqual("content1", binary_to_list(Content1)),
 	{ok,Content2} = file:read_file(Path++"/www.example.com/abc/def.html"),
-	?_assertEqual("content2", binary_to_list(Content2))
+	?assertEqual("content2", binary_to_list(Content2))
     after
 	rm_r(Path)
     end.
@@ -143,9 +143,9 @@ write4_test() ->
 	write_response_to_file(Path, "content1", "https://www.example.com:80/abc/def.html"),
 	write_response_to_file(Path, "content2", "https://www.example.com:80/abc"),
 	{ok,Content1} = file:read_file(Path++"/www.example.com/abc/def.html"),
-	?_assertEqual("conent1", binary_to_list(Content1)),
+	?assertEqual("content1", binary_to_list(Content1)),
 	{ok,Content2} = file:read_file(Path++"/www.example.com/abc/index.html"),
-	?_assertEqual("content2", binary_to_list(Content2))
+	?assertEqual("content2", binary_to_list(Content2))
     after
 	rm_r(Path)
     end.
