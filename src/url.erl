@@ -14,10 +14,12 @@ is_mailto(Url) -> lists:prefix("mailto:", Url).
 
 is_javascript(Url) -> lists:prefix("javascript:", Url).
 
+is_ftp(Url) -> lists:prefix("ftp:", Url).
+
 is_supported_url(Url) when is_list(Url) ->
     case Url of
         "#" -> false;
-        _ -> not(is_mailto(Url) orelse is_javascript(Url) orelse lists:prefix("http:///", Url))
+        _ -> not(is_mailto(Url) orelse is_javascript(Url) orelse is_ftp(Url) orelse lists:prefix("http:///", Url))
     end.
 
 remove_anchor(Url) when is_list(Url) ->
@@ -193,6 +195,7 @@ is_supported_url_test_() ->
      ?_assertEqual(false, is_supported_url("mailto:abc")),
      ?_assertEqual(false, is_supported_url("javascript:abc")),
      ?_assertEqual(false, is_supported_url("http:///www.regulations.gov/")),
+     ?_assertEqual(false, is_supported_url("ftp://ftp.lrz.de:21/")),
 
      ?_assertEqual(true, is_supported_url("/abc")),
      ?_assertEqual(true, is_supported_url("http://www.example.com/abc"))
